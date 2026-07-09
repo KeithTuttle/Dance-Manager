@@ -35,10 +35,32 @@ dance-manager/
 
 ## Running locally
 
-1. **Database** — `docker compose up -d db` (Postgres on :5432, db `dancemanager`).
-2. **Apply schema** — from `server/DanceManager.Api`: `dotnet dotnet-ef database update`.
-3. **Backend** — from `server/DanceManager.Api`: `dotnet run` (http://localhost:5184, Swagger at `/swagger`).
-4. **Frontend** — from `client`: `npm run dev` (http://localhost:5173, proxies `/api` → backend).
+### One-click in VS Code
+
+Open the repo folder and run the **`Start: client + API`** task (default build task —
+`Ctrl+Shift+B`, or Terminal → Run Task). It launches the Vite dev server and the
+API side-by-side in dedicated terminals. Recommended extensions are prompted on open
+(Vue Volar, C# Dev Kit, Tailwind IntelliSense).
+
+> The "Live Server" extension will **not** work here — it only serves static HTML and
+> cannot compile Vue/TS. Use the Vite dev server (`npm run dev` / the task above).
+
+### Manually
+
+1. **Backend** — from `server/DanceManager.Api`: `dotnet run` (http://localhost:5184, Swagger at `/swagger`).
+2. **Frontend** — from `client`: `npm run dev` (http://localhost:5199, proxies `/api` → backend).
+
+### Database (optional for now)
+
+The API **boots and runs without Postgres** — EF connects lazily, so the server starts
+and `GET /api/health` returns `200` even with no database. DB-backed endpoints
+(e.g. `/api/studios`) return `500` until Postgres is configured; the frontend tolerates
+this and simply shows "No studios yet".
+
+When ready to add real data:
+
+1. `docker compose up -d db` (Postgres on :5432, db `dancemanager`).
+2. From `server/DanceManager.Api`: `dotnet dotnet-ef database update`.
 
 ## Conventions for feature work
 

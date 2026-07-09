@@ -14,10 +14,14 @@ import {
   ChevronsRight,
   Check,
   ChevronDown,
+  X,
 } from 'lucide-vue-next'
 
+defineProps<{ open?: boolean }>()
+const emit = defineEmits<{ close: [] }>()
+
 const studioStore = useStudioStore()
-const collapsed = ref(false)
+const collapsed = ref(false) // desktop icon-only mode
 const studioMenuOpen = ref(false)
 
 const nav = [
@@ -42,20 +46,32 @@ function pick(id: number) {
 <template>
   <aside
     :class="[
-      'flex h-full flex-col border-r border-border bg-background transition-all duration-200',
-      collapsed ? 'w-16' : 'w-64',
+      'fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border bg-background transition-transform duration-200',
+      // Mobile: slide in/out. Desktop: always in flow, width toggles with collapse.
+      'md:static md:z-auto md:translate-x-0 md:transition-all',
+      open ? 'translate-x-0' : '-translate-x-full',
+      collapsed ? 'md:w-16' : 'md:w-64',
     ]"
   >
-    <!-- Brand + collapse toggle -->
+    <!-- Brand + toggles -->
     <div class="flex h-14 items-center justify-between border-b border-border px-3">
       <span v-if="!collapsed" class="text-sm font-semibold tracking-tight">DanceManager</span>
+      <!-- Desktop collapse -->
       <button
-        class="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        class="ml-auto hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground md:flex"
         :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
         @click="collapsed = !collapsed"
       >
         <ChevronsRight v-if="collapsed" class="h-4 w-4" />
         <ChevronsLeft v-else class="h-4 w-4" />
+      </button>
+      <!-- Mobile close -->
+      <button
+        class="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground md:hidden"
+        aria-label="Close menu"
+        @click="emit('close')"
+      >
+        <X class="h-4 w-4" />
       </button>
     </div>
 
@@ -96,9 +112,10 @@ function pick(id: number) {
         class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         active-class="bg-accent text-accent-foreground font-medium"
         :title="collapsed ? item.label : undefined"
+        @click="emit('close')"
       >
         <component :is="item.icon" class="h-4 w-4 shrink-0" />
-        <span v-if="!collapsed">{{ item.label }}</span>
+        <span v-if="!collapsed" class="md:inline">{{ item.label }}</span>
       </RouterLink>
     </nav>
   </aside>
