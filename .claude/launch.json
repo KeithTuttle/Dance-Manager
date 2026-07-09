@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "client",
       "port": 5199
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run"],
+      "cwd": "server/DanceManager.Api",
+      "port": 5184
     }
   ]
 }
