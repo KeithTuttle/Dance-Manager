@@ -1,0 +1,25 @@
+# ---- .NET ----
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# ---- Node / Vite ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+
+# ---- Editor / OS ----
+.idea/
+.DS_Store
+Thumbs.db
+*.log
