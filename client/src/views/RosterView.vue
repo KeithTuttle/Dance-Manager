@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
-import type { DanceClass, Student, StudentNote, RecitalParticipation } from '@/types'
+import type { DanceClass, Student, StudentNote, RecitalParticipation, Gender } from '@/types'
 import {
   DialogRoot,
   DialogPortal,
@@ -187,6 +188,25 @@ async function openStudent(student: Student) {
     notes.value = []
   }
   notesLoading.value = false
+}
+
+const GENDER_OPTIONS: { value: Gender | null; label: string }[] = [
+  { value: 'Boys', label: 'Boy' },
+  { value: 'Girls', label: 'Girl' },
+  { value: null, label: 'Unspecified' },
+]
+
+async function setGender(gender: Gender | null) {
+  const student = detailStudent.value
+  if (!student || student.gender === gender) return
+  const prev = student.gender ?? null
+  student.gender = gender
+  try {
+    await api.put(`/students/${student.id}`, student)
+    toast.success('Saved')
+  } catch {
+    student.gender = prev // api.ts already surfaces the error toast
+  }
 }
 
 async function addNote() {
@@ -456,6 +476,27 @@ watch(selectedClassId, async () => {
               <p v-if="detailStudent.medicalNotes">
                 <span class="text-muted-foreground">Medical:</span> {{ detailStudent.medicalNotes }}
               </p>
+
+              <!-- Gender (drives formation-map color coding) -->
+              <div class="flex items-center gap-3 pt-2">
+                <span class="text-muted-foreground">Gender:</span>
+                <div class="inline-flex overflow-hidden rounded-md border border-border">
+                  <button
+                    v-for="opt in GENDER_OPTIONS"
+                    :key="opt.label"
+                    type="button"
+                    class="border-l border-border px-2.5 py-1 text-xs font-medium transition-colors first:border-l-0"
+                    :class="
+                      (detailStudent.gender ?? null) === opt.value
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:bg-accent/60'
+                    "
+                    @click="setGender(opt.value)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                </div>
+              </div>
             </section>
 
             <!-- Notes -->

@@ -14,6 +14,8 @@ public class Student : ITenantScoped
     public string? MedicalNotes { get; set; }
     public bool InjuryAlert { get; set; }
     public string? MovementModifications { get; set; }
+    /// <summary>Optional; used to color-code dancers on the formation map. Null = unspecified.</summary>
+    public Gender? Gender { get; set; }
 
     public Studio? Studio { get; set; }
     public ICollection<StudentNote> Notes { get; set; } = new List<StudentNote>();
