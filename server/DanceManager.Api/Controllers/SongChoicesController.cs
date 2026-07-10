@@ -25,7 +25,7 @@ public class SongChoicesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<SongChoice>> Get(int id)
     {
-        var choice = await _db.SongChoices.FindAsync(id);
+        var choice = await _db.FindScopedAsync<SongChoice>(id);
         return choice is null ? NotFound() : choice;
     }
 
@@ -41,15 +41,13 @@ public class SongChoicesController : ControllerBase
     public async Task<IActionResult> Update(int id, SongChoice input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var choice = await _db.SongChoices.FindAsync(id);
+        var choice = await _db.FindScopedAsync<SongChoice>(id);
         if (choice is null) return NotFound();
         _db.SongChoices.Remove(choice);
         await _db.SaveChangesAsync();

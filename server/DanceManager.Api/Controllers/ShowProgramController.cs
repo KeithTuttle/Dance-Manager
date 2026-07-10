@@ -34,7 +34,7 @@ public class ShowProgramController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ShowProgram>> Get(int id)
     {
-        var entry = await _db.ShowPrograms.FindAsync(id);
+        var entry = await _db.FindScopedAsync<ShowProgram>(id);
         return entry is null ? NotFound() : entry;
     }
 
@@ -50,9 +50,7 @@ public class ShowProgramController : ControllerBase
     public async Task<IActionResult> Update(int id, ShowProgram input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     /// <summary>
@@ -81,7 +79,7 @@ public class ShowProgramController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var entry = await _db.ShowPrograms.FindAsync(id);
+        var entry = await _db.FindScopedAsync<ShowProgram>(id);
         if (entry is null) return NotFound();
         _db.ShowPrograms.Remove(entry);
         await _db.SaveChangesAsync();

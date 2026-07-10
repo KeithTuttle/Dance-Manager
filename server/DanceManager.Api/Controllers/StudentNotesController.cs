@@ -25,7 +25,7 @@ public class StudentNotesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<StudentNote>> Get(int id)
     {
-        var note = await _db.StudentNotes.FindAsync(id);
+        var note = await _db.FindScopedAsync<StudentNote>(id);
         return note is null ? NotFound() : note;
     }
 
@@ -41,7 +41,7 @@ public class StudentNotesController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var note = await _db.StudentNotes.FindAsync(id);
+        var note = await _db.FindScopedAsync<StudentNote>(id);
         if (note is null) return NotFound();
         _db.StudentNotes.Remove(note);
         await _db.SaveChangesAsync();

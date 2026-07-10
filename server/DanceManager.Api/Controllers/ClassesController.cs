@@ -25,7 +25,7 @@ public class ClassesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<DanceClass>> Get(int id)
     {
-        var danceClass = await _db.Classes.FindAsync(id);
+        var danceClass = await _db.FindScopedAsync<DanceClass>(id);
         return danceClass is null ? NotFound() : danceClass;
     }
 
@@ -41,15 +41,13 @@ public class ClassesController : ControllerBase
     public async Task<IActionResult> Update(int id, DanceClass input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var danceClass = await _db.Classes.FindAsync(id);
+        var danceClass = await _db.FindScopedAsync<DanceClass>(id);
         if (danceClass is null) return NotFound();
         _db.Classes.Remove(danceClass);
         await _db.SaveChangesAsync();

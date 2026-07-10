@@ -28,7 +28,7 @@ public class MilestonesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Milestone>> Get(int id)
     {
-        var milestone = await _db.Milestones.FindAsync(id);
+        var milestone = await _db.FindScopedAsync<Milestone>(id);
         return milestone is null ? NotFound() : milestone;
     }
 
@@ -44,15 +44,13 @@ public class MilestonesController : ControllerBase
     public async Task<IActionResult> Update(int id, Milestone input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var milestone = await _db.Milestones.FindAsync(id);
+        var milestone = await _db.FindScopedAsync<Milestone>(id);
         if (milestone is null) return NotFound();
         _db.Milestones.Remove(milestone);
         await _db.SaveChangesAsync();

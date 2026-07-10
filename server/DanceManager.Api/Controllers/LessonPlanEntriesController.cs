@@ -26,7 +26,7 @@ public class LessonPlanEntriesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<LessonPlanEntry>> Get(int id)
     {
-        var entry = await _db.LessonPlanEntries.FindAsync(id);
+        var entry = await _db.FindScopedAsync<LessonPlanEntry>(id);
         return entry is null ? NotFound() : entry;
     }
 
@@ -42,15 +42,13 @@ public class LessonPlanEntriesController : ControllerBase
     public async Task<IActionResult> Update(int id, LessonPlanEntry input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var entry = await _db.LessonPlanEntries.FindAsync(id);
+        var entry = await _db.FindScopedAsync<LessonPlanEntry>(id);
         if (entry is null) return NotFound();
         _db.LessonPlanEntries.Remove(entry);
         await _db.SaveChangesAsync();
