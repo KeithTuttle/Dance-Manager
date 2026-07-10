@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { GripVertical, AlertTriangle, Theater } from 'lucide-vue-next'
+import { GripVertical, AlertTriangle, Theater, Plus, Trash2 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type { ShowProgram, Routine, DanceClass, RecitalParticipation, Student } from '@/types'
 
@@ -13,6 +15,13 @@ const classes = ref<DanceClass[]>([])
 const participations = ref<RecitalParticipation[]>([])
 const students = ref<Student[]>([])
 const loading = ref(false)
+
+// Routines not yet in the show order, available to add.
+const availableRoutines = computed(() => {
+  const usedIds = new Set(program.value.map((p) => p.routineId))
+  return routines.value.filter((r) => !usedIds.has(r.id))
+})
+const routineToAdd = ref<number | null>(null)
 
 const routineMap = computed(() => new Map(routines.value.map((r) => [r.id, r])))
 const classMap = computed(() => new Map(classes.value.map((c) => [c.id, c])))
@@ -144,6 +153,42 @@ async function persistOrder() {
   }
 }
 
+async function addToShow() {
+  const routineId = routineToAdd.value
+  if (routineId === null) return
+  try {
+    const { data } = await api.post<ShowProgram>('/showprogram', {
+      routineId,
+      orderPosition: program.value.length,
+    })
+    program.value.push(data)
+    routineToAdd.value = null
+    toast.success('Added to show order')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function removeFromShow(entry: ShowProgram) {
+  if (
+    !(await confirm({
+      title: 'Remove this routine from the show order?',
+      confirmText: 'Remove',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = program.value
+  program.value = program.value.filter((p) => p.id !== entry.id)
+  try {
+    await api.delete(`/showprogram/${entry.id}`)
+    await persistOrder() // reindex remaining positions
+    toast.success('Removed')
+  } catch {
+    program.value = prev
+  }
+}
+
 onMounted(load)
 watch(() => studioStore.selectedStudioId, load)
 </script>
@@ -158,6 +203,27 @@ watch(() => studioStore.selectedStudioId, load)
         </p>
       </div>
       <span v-if="rows.length" class="text-xs text-muted-foreground">{{ rows.length }} routines</span>
+    </div>
+
+    <div class="mb-4 flex items-center gap-2">
+      <select
+        v-model="routineToAdd"
+        class="h-8 min-w-[16rem] rounded-md border border-border bg-background px-2 text-sm"
+      >
+        <option :value="null" disabled>
+          {{ availableRoutines.length === 0 ? 'No routines to add' : 'Select a routine to add…' }}
+        </option>
+        <option v-for="r in availableRoutines" :key="r.id" :value="r.id">
+          {{ r.songTitle || 'Untitled routine' }}
+        </option>
+      </select>
+      <button
+        class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+        :disabled="routineToAdd === null"
+        @click="addToShow"
+      >
+        <Plus class="h-3.5 w-3.5" /> Add to show
+      </button>
     </div>
 
     <div v-if="loading" class="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -199,6 +265,13 @@ watch(() => studioStore.selectedStudioId, load)
             <p class="truncate text-sm font-medium">{{ row.title }}</p>
             <p class="truncate text-xs text-muted-foreground">{{ row.className }}</p>
           </div>
+          <button
+            class="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Remove from show order"
+            @click="removeFromShow(row.entry)"
+          >
+            <Trash2 class="h-4 w-4" />
+          </button>
         </li>
 
         <!-- Quick Change Alert between consecutive routines sharing a student -->

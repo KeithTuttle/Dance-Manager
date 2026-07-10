@@ -28,6 +28,14 @@ public class ClassSessionsController : ControllerBase
         return session is null ? NoContent() : session;
     }
 
+    // GET /api/classsessions/history?classId= — past sessions with notes, newest-first.
+    [HttpGet("history")]
+    public async Task<ActionResult<IEnumerable<ClassSession>>> History([FromQuery] int classId) =>
+        await _db.ClassSessions
+            .Where(s => s.ClassId == classId && s.Notes != null && s.Notes != "")
+            .OrderByDescending(s => s.Date)
+            .ToListAsync();
+
     // PUT /api/classsessions — upsert notes for a class+date (unique on ClassId, Date).
     [HttpPut]
     public async Task<ActionResult<ClassSession>> Upsert([FromBody] ClassSessionUpsertDto input)

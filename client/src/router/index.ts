@@ -50,6 +50,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Mock Auditions' },
   },
   {
+    path: '/settings/studios',
+    name: 'settings-studios',
+    component: () => import('@/views/settings/StudiosView.vue'),
+    meta: { title: 'Studios & Classes' },
+  },
+  {
+    path: '/settings/account',
+    name: 'settings-account',
+    component: () => import('@/views/settings/AccountView.vue'),
+    meta: { title: 'Account' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/views/NotFoundView.vue'),
