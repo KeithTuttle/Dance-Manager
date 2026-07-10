@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
 import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, Student, StudentNote, RecitalParticipation, Gender } from '@/types'
@@ -16,7 +17,7 @@ import {
   PopoverPortal,
   PopoverContent,
 } from 'reka-ui'
-import { AlertTriangle, X, ChevronDown, Check, UserPlus } from 'lucide-vue-next'
+import { AlertTriangle, X, ChevronDown, Check, UserPlus, Plus, Trash2 } from 'lucide-vue-next'
 
 type ProgressStatus = 'NotStarted' | 'InProgress' | 'Mastered'
 
@@ -188,6 +189,54 @@ async function setCellStatus(studentId: number, milestoneId: number, status: Pro
       statuses.value = statuses.value.filter(
         (c) => !(c.studentId === studentId && c.milestoneId === milestoneId),
       )
+  }
+}
+
+// --- Milestone management (progression-matrix columns) ---
+let tempMilestoneId = -1
+
+async function addMilestone() {
+  const studioId = studioStore.selectedStudioId
+  if (!studioId) return
+  const draft: Milestone = { id: tempMilestoneId--, studioId, classId: null, name: 'New Milestone' }
+  milestones.value.push(draft)
+  try {
+    const { data } = await api.post<Milestone>('/milestones', draft)
+    Object.assign(draft, data)
+    toast.success('Milestone added')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function saveMilestone(m: Milestone) {
+  if (m.id < 0) return
+  try {
+    await api.put(`/milestones/${m.id}`, m)
+    toast.success('Saved')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function deleteMilestone(m: Milestone) {
+  if (
+    !(await confirm({
+      title: `Delete “${m.name}”?`,
+      message: 'This removes the milestone and every student’s progress on it.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = milestones.value
+  milestones.value = milestones.value.filter((x) => x.id !== m.id)
+  if (m.id < 0) return
+  try {
+    await api.delete(`/milestones/${m.id}`)
+    toast.success('Milestone deleted')
+  } catch {
+    milestones.value = prev
   }
 }
 
@@ -372,13 +421,22 @@ watch(selectedClassId, async () => {
           />
         </div>
       </div>
-      <button
-        class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-        :disabled="!studioStore.selectedStudioId"
-        @click="addStudent"
-      >
-        <UserPlus class="h-4 w-4" /> Add student
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          :disabled="!studioStore.selectedStudioId"
+          @click="addMilestone"
+        >
+          <Plus class="h-4 w-4" /> Add milestone
+        </button>
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          :disabled="!studioStore.selectedStudioId"
+          @click="addStudent"
+        >
+          <UserPlus class="h-4 w-4" /> Add student
+        </button>
+      </div>
     </div>
 
     <!-- Empty state -->
@@ -405,9 +463,22 @@ watch(selectedClassId, async () => {
               <th
                 v-for="m in milestones"
                 :key="m.id"
-                class="min-w-[120px] whitespace-nowrap px-3 py-3 text-left font-medium"
+                class="min-w-[140px] whitespace-nowrap px-3 py-3 text-left font-medium"
               >
-                {{ m.name }}
+                <div class="flex items-center gap-1">
+                  <input
+                    v-model="m.name"
+                    class="w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium hover:border-border focus:border-border focus:outline-none"
+                    @change="saveMilestone(m)"
+                  />
+                  <button
+                    class="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Delete milestone"
+                    @click="deleteMilestone(m)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </th>
               <th
                 v-if="milestones.length === 0"

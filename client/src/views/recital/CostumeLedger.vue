@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { ArrowUp, ArrowDown, Table2 } from 'lucide-vue-next'
+import { ArrowUp, ArrowDown, Table2, Plus } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type {
   CostumeRecord,
@@ -52,6 +53,35 @@ const excludedStudentIds = computed(() => {
   }
   return excluded
 })
+
+// --- Add record ---------------------------------------------------------------
+// Participating students who don't already have a costume record.
+const availableStudents = computed(() => {
+  const existing = new Set(records.value.map((r) => r.studentId))
+  return students.value.filter((s) => !excludedStudentIds.value.has(s.id) && !existing.has(s.id))
+})
+const studentToAdd = ref<number | null>(null)
+
+async function addRecord() {
+  const studentId = studentToAdd.value
+  if (studentId === null) return
+  const payload = {
+    studentId,
+    costumeSize: null,
+    feeAmount: 0,
+    isPaid: false,
+    orderStatus: 'NotOrdered' as OrderStatus,
+    alterationNotes: null,
+  }
+  try {
+    const { data } = await api.post<CostumeRecord>('/costumerecords', payload)
+    records.value.push(data)
+    studentToAdd.value = null
+    toast.success('Costume record added')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
 
 // --- Sorting -----------------------------------------------------------------
 type SortKey = 'student' | 'costumeSize' | 'feeAmount' | 'isPaid' | 'orderStatus'
@@ -193,7 +223,25 @@ function money(n: number): string {
           Sizes, fees, payment and order status. Non-participating students are excluded.
         </p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <select
+          v-model="studentToAdd"
+          class="h-8 min-w-[14rem] rounded-md border border-border bg-background px-2 text-sm"
+        >
+          <option :value="null" disabled>
+            {{ availableStudents.length === 0 ? 'No students to add' : 'Add a student…' }}
+          </option>
+          <option v-for="s in availableStudents" :key="s.id" :value="s.id">
+            {{ s.lastName }}, {{ s.firstName }}
+          </option>
+        </select>
+        <button
+          class="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 text-sm hover:bg-accent disabled:opacity-50"
+          :disabled="studentToAdd === null"
+          @click="addRecord"
+        >
+          <Plus class="h-3.5 w-3.5" /> Add record
+        </button>
         <select
           v-model="classFilter"
           class="h-8 rounded-md border border-border bg-background px-2 text-sm"
