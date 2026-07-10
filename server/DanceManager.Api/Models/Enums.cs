@@ -33,3 +33,10 @@ public enum AuditionDecision
     Yes,
     No
 }
+
+public enum ProgressStatus
+{
+    NotStarted,
+    InProgress,
+    Mastered
+}

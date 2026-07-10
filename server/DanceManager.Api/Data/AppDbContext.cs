@@ -23,6 +23,8 @@ public class AppDbContext : DbContext
     public DbSet<CostumeOption> CostumeOptions => Set<CostumeOption>();
     public DbSet<Audition> Auditions => Set<Audition>();
     public DbSet<AuditionCandidate> AuditionCandidates => Set<AuditionCandidate>();
+    public DbSet<Milestone> Milestones => Set<Milestone>();
+    public DbSet<StudentMilestoneStatus> StudentMilestoneStatuses => Set<StudentMilestoneStatus>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -36,6 +38,7 @@ public class AppDbContext : DbContext
         b.Entity<CostumeRecord>().Property(x => x.FeeAmount).HasColumnType("numeric(10,2)");
         b.Entity<CostumeOption>().Property(x => x.Gender).HasConversion<string>();
         b.Entity<AuditionCandidate>().Property(x => x.Decision).HasConversion<string>();
+        b.Entity<StudentMilestoneStatus>().Property(x => x.Status).HasConversion<string>();
 
         // JSON columns (Postgres jsonb).
         b.Entity<Formation>().Property(x => x.StudentCoordinates).HasColumnType("jsonb");
@@ -57,5 +60,6 @@ public class AppDbContext : DbContext
         b.Entity<AttendanceRecord>().HasIndex(x => new { x.StudentId, x.ClassId, x.Date }).IsUnique();
         b.Entity<ClassSession>().HasIndex(x => new { x.ClassId, x.Date }).IsUnique();
         b.Entity<ShowProgram>().HasIndex(x => x.OrderPosition);
+        b.Entity<StudentMilestoneStatus>().HasIndex(x => new { x.StudentId, x.MilestoneId }).IsUnique();
     }
 }
