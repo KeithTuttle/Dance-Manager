@@ -11,6 +11,7 @@ import {
 } from 'reka-ui'
 import { CalendarCheck, NotebookPen, X, AlertTriangle, Save, Loader2 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, Student, AttendanceRecord, AttendanceStatus } from '@/types'
 import type { AttendanceSummary, AttendanceUpsert } from './attendance/attendance-types'
@@ -154,6 +155,7 @@ async function save() {
   try {
     await api.put('/attendance', payload)
     dirty.value = false
+    toast.success('Attendance saved')
     // Refresh the rolling summary since today's marks may change it.
     await fetchSummary()
   } catch {
@@ -189,6 +191,7 @@ async function saveNotes() {
       notes: notesText.value,
     })
     notesOpen.value = false
+    toast.success('Class notes saved')
   } catch {
     // DB unavailable — leave drawer open so notes are not lost.
   } finally {
@@ -198,7 +201,7 @@ async function saveNotes() {
 
 onMounted(async () => {
   if (studioStore.studios.length === 0) {
-    await studioStore.fetchStudios()
+    await studioStore.fetchStudios().catch(() => {})
   }
   await Promise.all([fetchClasses(), fetchStudents()])
   await reloadForSelection()

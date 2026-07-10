@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
 import type { Audition, AuditionCandidate, AuditionDecision } from '@/types'
 import { Plus, Trash2, X, ChevronDown, Check } from 'lucide-vue-next'
 
@@ -172,6 +173,15 @@ async function addSkill() {
 async function removeSkill(skill: string) {
   const a = selectedAudition.value
   if (!a) return
+  if (
+    !(await confirm({
+      title: `Remove “${skill}”?`,
+      message: 'This clears every candidate’s score for that skill.',
+      confirmText: 'Remove',
+      destructive: true,
+    }))
+  )
+    return
   const next = parseSkills(a.skillColumns).filter((s) => s !== skill)
   a.skillColumns = JSON.stringify(next)
   await persistAudition(a)
@@ -212,6 +222,14 @@ async function addCandidate() {
 }
 
 async function removeCandidate(c: AuditionCandidate) {
+  if (
+    !(await confirm({
+      title: `Remove ${c.name || 'this candidate'}?`,
+      confirmText: 'Remove',
+      destructive: true,
+    }))
+  )
+    return
   try {
     await api.delete(`/auditioncandidates/${c.id}`)
   } catch {

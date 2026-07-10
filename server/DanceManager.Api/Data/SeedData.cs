@@ -1,3 +1,4 @@
+using DanceManager.Api.Auth;
 using DanceManager.Api.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +27,8 @@ public class DevSeeder : IHostedService
         {
             using var scope = _services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var currentTenant = scope.ServiceProvider.GetRequiredService<ICurrentTenant>();
+            var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
 
             // Postgres may be absent — never crash if we cannot reach it.
             if (!await db.Database.CanConnectAsync(cancellationToken))
@@ -34,13 +37,15 @@ public class DevSeeder : IHostedService
                 return;
             }
 
-            if (await db.Studios.AnyAsync(cancellationToken))
+            // Bypass the tenant query filter for the existence check (no tenant is
+            // resolved at startup, so a filtered query would always look empty).
+            if (await db.Studios.IgnoreQueryFilters().AnyAsync(cancellationToken))
             {
                 _logger.LogInformation("DevSeeder: studios already present; skipping seed.");
                 return;
             }
 
-            await SeedAsync(db, cancellationToken);
+            await SeedAsync(db, currentTenant, config, cancellationToken);
             _logger.LogInformation("DevSeeder: seed data applied.");
         }
         catch (Exception ex)
@@ -52,8 +57,32 @@ public class DevSeeder : IHostedService
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private static async Task SeedAsync(AppDbContext db, CancellationToken ct)
+    private static async Task SeedAsync(
+        AppDbContext db, ICurrentTenant currentTenant, IConfiguration config, CancellationToken ct)
     {
+        // Demo tenant that owns all seeded data. Tenants are not tenant-scoped, so
+        // this insert isn't stamped/filtered.
+        var tenant = new Tenant { Name = "Demo Studio Group" };
+        db.Tenants.Add(tenant);
+        await db.SaveChangesAsync(ct);
+
+        // Optionally attach a real Clerk user to the demo tenant so signing in with
+        // that account locally lands on the seeded data (set Clerk:DevUserId).
+        var devUserId = config["Clerk:DevUserId"];
+        if (!string.IsNullOrWhiteSpace(devUserId))
+        {
+            db.Memberships.Add(new Membership
+            {
+                TenantId = tenant.Id,
+                ClerkUserId = devUserId,
+                Role = MembershipRole.Owner,
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        // From here on, every seeded ITenantScoped row is auto-stamped with this tenant.
+        currentTenant.TenantId = tenant.Id;
+
         // --- Studio 1: Hourly ---
         var studioA = new Studio
         {

@@ -4,8 +4,9 @@ namespace DanceManager.Api.Models;
 /// A progression milestone (skill/goal) tracked for students, e.g. "Single pirouette".
 /// Scoped to a studio, optionally narrowed to a specific class.
 /// </summary>
-public class Milestone
+public class Milestone : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int StudioId { get; set; }
     public int? ClassId { get; set; }

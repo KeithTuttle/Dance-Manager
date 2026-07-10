@@ -4,8 +4,9 @@ namespace DanceManager.Api.Models;
 /// A staging formation for a routine. StudentCoordinates is a JSON (jsonb) object
 /// mapping StudentId -> { x, y } percentage coordinates on the stage grid.
 /// </summary>
-public class Formation
+public class Formation : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int RoutineId { get; set; }
     public string FormationName { get; set; } = string.Empty;

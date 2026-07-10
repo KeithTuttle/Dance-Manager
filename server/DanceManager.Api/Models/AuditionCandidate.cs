@@ -4,8 +4,9 @@ namespace DanceManager.Api.Models;
 /// A candidate in a mock audition. Scores is a JSON (jsonb) object mapping
 /// skill name -> 1-5 score. Average is computed from Scores, not stored.
 /// </summary>
-public class AuditionCandidate
+public class AuditionCandidate : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int AuditionId { get; set; }
     public string Name { get; set; } = string.Empty;

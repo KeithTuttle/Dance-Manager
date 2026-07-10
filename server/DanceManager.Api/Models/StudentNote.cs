@@ -4,8 +4,9 @@ namespace DanceManager.Api.Models;
 /// Free-form placement/progress note for a student (e.g. "should move up a level").
 /// Distinct from Student.MedicalNotes. Optionally scoped to a class.
 /// </summary>
-public class StudentNote
+public class StudentNote : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int StudentId { get; set; }
     public int? ClassId { get; set; }

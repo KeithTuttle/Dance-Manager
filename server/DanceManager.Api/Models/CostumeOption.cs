@@ -1,7 +1,8 @@
 namespace DanceManager.Api.Models;
 
-public class CostumeOption
+public class CostumeOption : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int RoutineId { get; set; }
     public Gender Gender { get; set; }

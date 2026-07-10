@@ -1,7 +1,8 @@
 namespace DanceManager.Api.Models;
 
-public class Studio
+public class Studio : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Address { get; set; }

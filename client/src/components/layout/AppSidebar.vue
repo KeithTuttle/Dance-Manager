@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useDark, useToggle } from '@vueuse/core'
 import { useStudioStore } from '@/stores/studio'
 import {
   LayoutDashboard,
@@ -14,8 +15,11 @@ import {
   ChevronsRight,
   Check,
   ChevronDown,
+  Sun,
+  Moon,
   X,
 } from 'lucide-vue-next'
+import { UserButton } from '@clerk/vue'
 
 defineProps<{ open?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -23,6 +27,13 @@ const emit = defineEmits<{ close: [] }>()
 const studioStore = useStudioStore()
 const collapsed = ref(false) // desktop icon-only mode
 const studioMenuOpen = ref(false)
+const authEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+// Dark mode: toggles the `.dark` class Tailwind's darkMode:['class'] strategy
+// looks for, and persists the choice to localStorage. Defaults to the OS
+// preference (prefers-color-scheme) when nothing has been chosen yet.
+const isDark = useDark()
+const toggleDark = useToggle(isDark)
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -53,7 +64,7 @@ function pick(id: number) {
       collapsed ? 'md:w-16' : 'md:w-64',
     ]"
   >
-    <!-- Brand + toggles -->
+    <!-- Brand + collapse/close -->
     <div class="flex h-14 items-center justify-between border-b border-border px-3">
       <span v-if="!collapsed" class="text-sm font-semibold tracking-tight">DanceManager</span>
       <!-- Desktop collapse -->
@@ -118,5 +129,27 @@ function pick(id: number) {
         <span v-if="!collapsed" class="md:inline">{{ item.label }}</span>
       </RouterLink>
     </nav>
+
+    <!-- Footer: theme toggle + account -->
+    <div class="space-y-1 border-t border-border p-2">
+      <button
+        class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        :class="collapsed ? 'justify-center' : ''"
+        :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="collapsed ? (isDark ? 'Light mode' : 'Dark mode') : undefined"
+        @click="toggleDark()"
+      >
+        <Sun v-if="isDark" class="h-4 w-4 shrink-0" />
+        <Moon v-else class="h-4 w-4 shrink-0" />
+        <span v-if="!collapsed">{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
+      </button>
+      <div
+        v-if="authEnabled"
+        class="px-1 pt-1"
+        :class="collapsed ? 'flex justify-center' : ''"
+      >
+        <UserButton :show-name="!collapsed" />
+      </div>
+    </div>
   </aside>
 </template>

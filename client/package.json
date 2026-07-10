@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/ui": "^1.25.2",
+    "@clerk/vue": "^2.4.14",
     "@vueuse/core": "^14.3.0",
     "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",

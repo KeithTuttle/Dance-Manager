@@ -40,3 +40,9 @@ public enum ProgressStatus
     InProgress,
     Mastered
 }
+
+public enum MembershipRole
+{
+    Owner,
+    Member
+}

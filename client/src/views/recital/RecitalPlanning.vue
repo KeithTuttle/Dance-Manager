@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Music, Plus, Trash2, ExternalLink, Users, Map as MapIcon } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
 import { useStudioStore } from '@/stores/studio'
 import type {
   Routine,
@@ -128,6 +129,8 @@ async function saveSongChoice(choice: SongChoice) {
 }
 
 async function deleteSongChoice(choice: SongChoice) {
+  if (!(await confirm({ title: 'Delete this song choice?', confirmText: 'Delete', destructive: true })))
+    return
   songChoices.value = songChoices.value.filter((c) => c.id !== choice.id)
   if (choice.id < 0) return
   try {
@@ -167,6 +170,8 @@ async function saveCostumeOption(option: CostumeOption) {
 }
 
 async function deleteCostumeOption(option: CostumeOption) {
+  if (!(await confirm({ title: 'Delete this costume option?', confirmText: 'Delete', destructive: true })))
+    return
   costumeOptions.value = costumeOptions.value.filter((o) => o.id !== option.id)
   if (option.id < 0) return
   try {

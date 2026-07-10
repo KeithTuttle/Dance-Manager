@@ -49,9 +49,22 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/AuditionsView.vue'),
     meta: { title: 'Mock Auditions' },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/views/NotFoundView.vue'),
+    meta: { title: 'Not Found' },
+  },
 ]
 
 export const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// Keep the browser tab title in sync with the active route.
+const BASE_TITLE = 'DanceManager'
+router.afterEach((to) => {
+  const pageTitle = to.meta.title as string | undefined
+  document.title = pageTitle ? `${pageTitle} · ${BASE_TITLE}` : BASE_TITLE
 })

@@ -1,3 +1,5 @@
+using System.Reflection;
+using DanceManager.Api.Auth;
 using DanceManager.Api.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -5,7 +7,14 @@ namespace DanceManager.Api.Data;
 
 public class AppDbContext : DbContext
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    private readonly ICurrentTenant _tenant;
+
+    public AppDbContext(DbContextOptions<AppDbContext> options, ICurrentTenant tenant) : base(options)
+        => _tenant = tenant;
+
+    // Tenancy tables (global — NOT tenant-scoped).
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<Membership> Memberships => Set<Membership>();
 
     public DbSet<Studio> Studios => Set<Studio>();
     public DbSet<DanceClass> Classes => Set<DanceClass>();
@@ -26,6 +35,12 @@ public class AppDbContext : DbContext
     public DbSet<Milestone> Milestones => Set<Milestone>();
     public DbSet<StudentMilestoneStatus> StudentMilestoneStatuses => Set<StudentMilestoneStatus>();
 
+    /// <summary>Tenant used by the query filter; 0 (matches nothing) when unresolved.</summary>
+    private int CurrentTenantId => _tenant.TenantId ?? 0;
+
+    private static readonly MethodInfo ConfigureTenantFilterMethod = typeof(AppDbContext)
+        .GetMethod(nameof(ConfigureTenantScope), BindingFlags.Instance | BindingFlags.NonPublic)!;
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -39,6 +54,7 @@ public class AppDbContext : DbContext
         b.Entity<CostumeOption>().Property(x => x.Gender).HasConversion<string>();
         b.Entity<AuditionCandidate>().Property(x => x.Decision).HasConversion<string>();
         b.Entity<StudentMilestoneStatus>().Property(x => x.Status).HasConversion<string>();
+        b.Entity<Membership>().Property(x => x.Role).HasConversion<string>();
 
         // JSON columns (Postgres jsonb).
         b.Entity<Formation>().Property(x => x.StudentCoordinates).HasColumnType("jsonb");
@@ -47,6 +63,9 @@ public class AppDbContext : DbContext
 
         // Composite key.
         b.Entity<RecitalParticipation>().HasKey(x => new { x.StudentId, x.ClassId });
+
+        // One Clerk user maps to exactly one membership.
+        b.Entity<Membership>().HasIndex(x => x.ClerkUserId).IsUnique();
 
         // Prevent multiple cascade paths; keep deletes explicit for feature agents.
         b.Entity<AttendanceRecord>()
@@ -61,5 +80,46 @@ public class AppDbContext : DbContext
         b.Entity<ClassSession>().HasIndex(x => new { x.ClassId, x.Date }).IsUnique();
         b.Entity<ShowProgram>().HasIndex(x => x.OrderPosition);
         b.Entity<StudentMilestoneStatus>().HasIndex(x => new { x.StudentId, x.MilestoneId }).IsUnique();
+
+        // Tenant isolation: every ITenantScoped entity gets a global query filter
+        // (e.TenantId == current tenant) and a TenantId index. Defense-in-depth —
+        // a query that forgets to filter still cannot cross tenants.
+        foreach (var entityType in b.Model.GetEntityTypes())
+        {
+            if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
+                ConfigureTenantFilterMethod.MakeGenericMethod(entityType.ClrType).Invoke(this, new object[] { b });
+        }
+    }
+
+    private void ConfigureTenantScope<T>(ModelBuilder b) where T : class, ITenantScoped
+    {
+        b.Entity<T>().HasIndex(e => e.TenantId);
+        // References the context instance member so EF re-evaluates it per query
+        // rather than baking a constant into the cached model.
+        b.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampTenant();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampTenant();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>Stamp the current tenant onto new tenant-scoped rows on insert.</summary>
+    private void StampTenant()
+    {
+        var tid = _tenant.TenantId;
+        if (tid is null or 0) return;
+        foreach (var entry in ChangeTracker.Entries<ITenantScoped>())
+        {
+            if (entry.State == EntityState.Added && entry.Entity.TenantId == 0)
+                entry.Entity.TenantId = tid.Value;
+        }
     }
 }

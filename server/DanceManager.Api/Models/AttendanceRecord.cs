@@ -1,7 +1,8 @@
 namespace DanceManager.Api.Models;
 
-public class AttendanceRecord
+public class AttendanceRecord : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int StudentId { get; set; }
     public int ClassId { get; set; }

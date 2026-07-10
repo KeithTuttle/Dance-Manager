@@ -4,8 +4,9 @@ namespace DanceManager.Api.Models;
 /// A class taught at a studio (e.g. "Tuesday Intermediate Ballet").
 /// Referenced pervasively across the app as ClassId.
 /// </summary>
-public class DanceClass
+public class DanceClass : ITenantScoped
 {
+    public int TenantId { get; set; }
     public int Id { get; set; }
     public int StudioId { get; set; }
     public string Name { get; set; } = string.Empty;
