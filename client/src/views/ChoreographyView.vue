@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/lib/api'
 import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, Routine, Formation, Student, RecitalParticipation, Gender } from '@/types'
+import { toast } from '@/lib/toast'
 import { Download, Plus, Music, Loader2 } from 'lucide-vue-next'
 
 const studioStore = useStudioStore()
@@ -262,6 +263,38 @@ async function saveNotes() {
   }
 }
 
+// --- Routine create / edit ---
+async function addRoutine() {
+  const classId = selectedClassId.value
+  if (!classId) return
+  const payload: Omit<Routine, 'id'> = {
+    classId,
+    songTitle: 'New Routine',
+    artist: null,
+    videoUrl: null,
+    choreographyNotes: null,
+  }
+  try {
+    const { data } = await api.post<Routine>('/routines', payload)
+    routines.value.push(data)
+    selectedRoutineId.value = data.id
+    toast.success('Routine added')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function saveRoutineFields() {
+  const routine = selectedRoutine.value
+  if (!routine) return
+  try {
+    await api.put(`/routines/${routine.id}`, routine)
+    toast.success('Saved')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
 // --- Formation management ---
 async function addFormation() {
   if (!selectedRoutineId.value) return
@@ -403,6 +436,13 @@ async function generateHandoff() {
             </option>
           </select>
         </label>
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+          :disabled="!selectedClassId"
+          @click="addRoutine"
+        >
+          <Plus class="h-3.5 w-3.5" /> Add routine
+        </button>
       </div>
     </header>
 
@@ -422,11 +462,35 @@ async function generateHandoff() {
     <div v-else class="grid flex-1 grid-cols-1 gap-px overflow-hidden bg-border lg:grid-cols-2">
       <!-- LEFT: video + notes -->
       <div class="flex flex-col overflow-y-auto bg-background p-4 sm:p-6">
-        <div class="mb-4">
-          <div class="text-sm font-medium">{{ selectedRoutine.songTitle || 'Untitled' }}</div>
-          <div v-if="selectedRoutine.artist" class="text-sm text-muted-foreground">
-            {{ selectedRoutine.artist }}
-          </div>
+        <div class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label class="space-y-1">
+            <span class="text-xs text-muted-foreground">Song title</span>
+            <input
+              v-model="selectedRoutine.songTitle"
+              type="text"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="saveRoutineFields"
+            />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-muted-foreground">Artist</span>
+            <input
+              v-model="selectedRoutine.artist"
+              type="text"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="saveRoutineFields"
+            />
+          </label>
+          <label class="space-y-1 sm:col-span-2">
+            <span class="text-xs text-muted-foreground">Video link (YouTube or Vimeo)</span>
+            <input
+              v-model="selectedRoutine.videoUrl"
+              type="text"
+              placeholder="https://youtube.com/watch?v=…"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="saveRoutineFields"
+            />
+          </label>
         </div>
 
         <div class="aspect-video w-full overflow-hidden rounded-md border border-border bg-black">

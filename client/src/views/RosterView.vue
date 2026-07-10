@@ -143,6 +143,32 @@ async function loadMatrix() {
   loading.value = false
 }
 
+// --- Recital participation toggle (scoped to the selected class) ---
+function isParticipating(studentId: number): boolean {
+  return participation.value.some((p) => p.studentId === studentId && p.isParticipating)
+}
+
+async function toggleParticipation(studentId: number) {
+  const classId = selectedClassId.value
+  if (!classId) return
+  const next = !isParticipating(studentId)
+  const idx = participation.value.findIndex(
+    (p) => p.studentId === studentId && p.classId === classId,
+  )
+  const prev = idx >= 0 ? participation.value[idx].isParticipating : null
+  // Optimistic update.
+  if (idx >= 0) participation.value[idx] = { studentId, classId, isParticipating: next }
+  else participation.value.push({ studentId, classId, isParticipating: next })
+
+  try {
+    await api.put('/recitalparticipation', { studentId, classId, isParticipating: next })
+  } catch {
+    // Roll back on failure (api.ts already surfaces the error toast).
+    if (idx >= 0 && prev !== null) participation.value[idx] = { studentId, classId, isParticipating: prev }
+    else participation.value = participation.value.filter((p) => !(p.studentId === studentId && p.classId === classId))
+  }
+}
+
 async function setCellStatus(studentId: number, milestoneId: number, status: ProgressStatus) {
   openCell.value = null
   const idx = statuses.value.findIndex(
@@ -389,6 +415,9 @@ watch(selectedClassId, async () => {
               >
                 No milestones defined
               </th>
+              <th class="min-w-[110px] whitespace-nowrap px-3 py-3 text-left font-medium">
+                Participating
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -467,6 +496,20 @@ watch(selectedClassId, async () => {
                 </PopoverRoot>
               </td>
               <td v-if="milestones.length === 0" class="px-3 py-2.5 text-muted-foreground">—</td>
+              <td class="px-3 py-2.5">
+                <button
+                  type="button"
+                  class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                  :class="
+                    isParticipating(s.id)
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                      : 'bg-muted text-muted-foreground'
+                  "
+                  @click="toggleParticipation(s.id)"
+                >
+                  {{ isParticipating(s.id) ? 'Yes' : 'No' }}
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
