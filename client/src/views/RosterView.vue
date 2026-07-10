@@ -345,6 +345,27 @@ async function addNote() {
   savingNote.value = false
 }
 
+async function saveNote(note: StudentNote) {
+  try {
+    await api.put(`/studentnotes/${note.id}`, note)
+    toast.success('Saved')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function deleteNote(note: StudentNote) {
+  if (!(await confirm({ title: 'Delete this note?', confirmText: 'Delete', destructive: true }))) return
+  const prev = notes.value
+  notes.value = notes.value.filter((n) => n.id !== note.id)
+  try {
+    await api.delete(`/studentnotes/${note.id}`)
+    toast.success('Note deleted')
+  } catch {
+    notes.value = prev
+  }
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
@@ -762,8 +783,22 @@ watch(selectedClassId, async () => {
                   :key="n.id"
                   class="rounded-md border border-border p-3 text-sm"
                 >
-                  <p class="whitespace-pre-wrap">{{ n.note }}</p>
-                  <p class="mt-1.5 text-xs text-muted-foreground">{{ formatDate(n.createdAt) }}</p>
+                  <textarea
+                    v-model="n.note"
+                    rows="2"
+                    class="w-full resize-none whitespace-pre-wrap rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-border focus:border-border focus:outline-none"
+                    @change="saveNote(n)"
+                  />
+                  <div class="mt-1.5 flex items-center justify-between">
+                    <p class="text-xs text-muted-foreground">{{ formatDate(n.createdAt) }}</p>
+                    <button
+                      class="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Delete note"
+                      @click="deleteNote(n)"
+                    >
+                      <Trash2 class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </li>
               </ul>
             </section>

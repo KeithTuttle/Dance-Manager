@@ -4,7 +4,8 @@ import { api } from '@/lib/api'
 import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, Routine, Formation, Student, RecitalParticipation, Gender } from '@/types'
 import { toast } from '@/lib/toast'
-import { Download, Plus, Music, Loader2 } from 'lucide-vue-next'
+import { confirm } from '@/lib/confirm'
+import { Download, Plus, Music, Loader2, Trash2 } from 'lucide-vue-next'
 
 const studioStore = useStudioStore()
 
@@ -329,6 +330,38 @@ async function saveFormation() {
   }
 }
 
+async function saveFormationName() {
+  const formation = selectedFormation.value
+  if (!formation) return
+  try {
+    await api.put(`/formations/${formation.id}`, formation)
+    toast.success('Saved')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function deleteFormation() {
+  const formation = selectedFormation.value
+  if (!formation) return
+  if (
+    !(await confirm({
+      title: `Delete “${formation.formationName || 'this formation'}”?`,
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  try {
+    await api.delete(`/formations/${formation.id}`)
+    formations.value = formations.value.filter((f) => f.id !== formation.id)
+    selectedFormationId.value = formations.value[0]?.id ?? null
+    toast.success('Formation deleted')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
 // --- Drag handling on the SVG stage ---
 const stageRef = ref<SVGSVGElement | null>(null)
 const draggingId = ref<number | null>(null)
@@ -548,6 +581,23 @@ async function generateHandoff() {
             @click="addFormation"
           >
             <Plus class="h-3.5 w-3.5" /> Add
+          </button>
+        </div>
+
+        <!-- Rename / delete the selected formation -->
+        <div v-if="selectedFormation" class="mb-4 flex items-center gap-2">
+          <input
+            v-model="selectedFormation.formationName"
+            placeholder="Formation name"
+            class="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            @change="saveFormationName"
+          />
+          <button
+            class="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Delete formation"
+            @click="deleteFormation"
+          >
+            <Trash2 class="h-4 w-4" />
           </button>
         </div>
 

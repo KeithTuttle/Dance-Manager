@@ -38,6 +38,13 @@ public class StudentNotesController : ControllerBase
         return CreatedAtAction(nameof(Get), new { id = note.Id }, note);
     }
 
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Update(int id, StudentNote input)
+    {
+        if (id != input.Id) return BadRequest();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
+    }
+
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {

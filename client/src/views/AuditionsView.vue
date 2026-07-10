@@ -333,11 +333,28 @@ onMounted(fetchAuditions)
       </div>
 
       <!-- Header note: rating scale + open spots -->
-      <p v-if="selectedAudition" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      <div v-if="selectedAudition" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
         <span>Rating scale: <span class="font-medium text-foreground">1–5</span> (1 = weakest, 5 = strongest)</span>
-        <span>Open spots: <span class="font-medium text-foreground">{{ selectedAudition.spotsAvailable }}</span></span>
-        <span v-if="selectedAudition.date">Date: <span class="font-medium text-foreground">{{ selectedAudition.date }}</span></span>
-      </p>
+        <label class="flex items-center gap-1.5">
+          Open spots:
+          <input
+            v-model.number="selectedAudition.spotsAvailable"
+            type="number"
+            min="0"
+            class="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            @change="persistAudition(selectedAudition)"
+          />
+        </label>
+        <label class="flex items-center gap-1.5">
+          Date:
+          <input
+            v-model="selectedAudition.date"
+            type="date"
+            class="rounded border border-border bg-background px-1.5 py-0.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            @change="persistAudition(selectedAudition)"
+          />
+        </label>
+      </div>
       <p v-else class="mt-2 text-sm text-muted-foreground">
         Select or create an audition to begin scoring candidates.
       </p>

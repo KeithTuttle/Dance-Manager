@@ -13,7 +13,7 @@ import { CalendarCheck, NotebookPen, X, AlertTriangle, Save, Loader2 } from 'luc
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
-import type { DanceClass, Student, AttendanceRecord, AttendanceStatus } from '@/types'
+import type { DanceClass, Student, AttendanceRecord, AttendanceStatus, ClassSession } from '@/types'
 import type { AttendanceSummary, AttendanceUpsert } from './attendance/attendance-types'
 import { renderMarkdown } from './attendance/markdown'
 
@@ -47,6 +47,7 @@ const notesOpen = ref(false)
 const notesText = ref('')
 const savingNotes = ref(false)
 const notesPreview = computed(() => renderMarkdown(notesText.value))
+const sessionHistory = ref<ClassSession[]>([])
 
 const selectedClass = computed(
   () => classes.value.find((c) => c.id === selectedClassId.value) ?? null,
@@ -169,6 +170,7 @@ async function save() {
 async function openNotes() {
   notesOpen.value = true
   notesText.value = ''
+  sessionHistory.value = []
   if (selectedClassId.value === null || !selectedDate.value) return
   try {
     const res = await api.get('/classsessions', {
@@ -179,6 +181,25 @@ async function openNotes() {
   } catch {
     notesText.value = ''
   }
+  try {
+    const { data } = await api.get<ClassSession[]>('/classsessions/history', {
+      params: { classId: selectedClassId.value },
+    })
+    sessionHistory.value = data ?? []
+  } catch {
+    sessionHistory.value = []
+  }
+}
+
+function loadPastSession(session: ClassSession) {
+  selectedDate.value = session.date
+  notesText.value = session.notes ?? ''
+}
+
+function formatSessionDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 async function saveNotes() {
@@ -369,6 +390,26 @@ watch(selectedDate, async () => {
             >
               <X class="h-4 w-4" />
             </DialogClose>
+          </div>
+
+          <div
+            v-if="sessionHistory.length > 0"
+            class="flex flex-wrap items-center gap-1.5 border-b border-border px-5 py-3"
+          >
+            <span class="text-xs font-medium text-muted-foreground">Past sessions:</span>
+            <button
+              v-for="h in sessionHistory"
+              :key="h.id"
+              class="rounded-md border px-2 py-1 text-xs transition-colors"
+              :class="
+                h.date === selectedDate
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border hover:bg-accent'
+              "
+              @click="loadPastSession(h)"
+            >
+              {{ formatSessionDate(h.date) }}
+            </button>
           </div>
 
           <div class="grid flex-1 grid-rows-2 gap-4 overflow-hidden p-5 lg:grid-rows-none lg:grid-cols-2">
