@@ -524,11 +524,15 @@ async function generateHandoff() {
                 :width="GW"
                 :height="GH"
                 fill="none"
-                class="stroke-border"
+                class="stroke-muted-foreground"
                 stroke-width="1"
+                opacity="0.5"
               />
-              <!-- grid lines -->
-              <g class="stroke-border" stroke-width="0.4">
+              <!-- grid lines. Note: --border and --muted share the same value in
+                   dark mode (see style.css), so stroke-border is invisible against
+                   this bg-muted surface there; stroke-muted-foreground + opacity
+                   stays visible (if subtle) in both themes. -->
+              <g class="stroke-muted-foreground" stroke-width="0.4" opacity="0.35">
                 <line
                   v-for="k in 21"
                   :key="`v${k}`"
@@ -536,7 +540,7 @@ async function generateHandoff() {
                   :y1="GY0"
                   :x2="GX0 + (k - 1) * UNIT"
                   :y2="GY1"
-                  :class="k - 1 === 10 ? 'stroke-muted-foreground' : ''"
+                  :opacity="k - 1 === 10 ? 1 : undefined"
                 />
                 <line
                   v-for="r in 5"
