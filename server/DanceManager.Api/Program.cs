@@ -11,6 +11,14 @@ QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load user-secrets (the Supabase connection string) explicitly by id in dev.
+// CreateBuilder already does this, but only via the UserSecretsId *compiled into
+// the assembly* — a stale/incremental build (common in VS Code) can miss it and
+// silently fall back to the localhost placeholder. Referencing the id directly
+// makes the secret load regardless of build state.
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddUserSecrets("f98fb171-b667-400e-968f-b9058a318e6e");
+
 const string CorsPolicy = "spa";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
