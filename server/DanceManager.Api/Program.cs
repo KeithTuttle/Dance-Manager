@@ -1,5 +1,9 @@
 using DanceManager.Api.Data;
+using DanceManager.Api.Services;
 using Microsoft.EntityFrameworkCore;
+
+// QuestPDF Community license (required, set once at startup).
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +11,9 @@ const string CorsPolicy = "spa";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+// PDF generation for the Sub Handoff feature (Unit 6).
+builder.Services.AddScoped<SubHandoffPdfService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
