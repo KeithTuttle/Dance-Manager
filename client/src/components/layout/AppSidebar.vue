@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useDark, useToggle } from '@vueuse/core'
 import { useStudioStore } from '@/stores/studio'
 import {
@@ -11,10 +12,13 @@ import {
   Music,
   Theater,
   ClipboardList,
+  Settings,
+  CircleUser,
   ChevronsLeft,
   ChevronsRight,
   Check,
   ChevronDown,
+  Plus,
   Sun,
   Moon,
   X,
@@ -44,6 +48,11 @@ const nav = [
   { to: '/choreography', label: 'Choreography', icon: Music },
   { to: '/recital', label: 'Recital', icon: Theater },
   { to: '/auditions', label: 'Auditions', icon: ClipboardList },
+]
+
+const settingsNav = [
+  { to: '/settings/studios', label: 'Studios & Classes', icon: Settings },
+  { to: '/settings/account', label: 'Account', icon: CircleUser },
 ]
 
 const selectedName = computed(() => studioStore.selectedStudio?.name ?? 'Select studio')
@@ -111,6 +120,14 @@ function pick(id: number) {
           <span class="truncate">{{ s.name }}</span>
           <Check v-if="s.id === studioStore.selectedStudioId" class="h-4 w-4" />
         </button>
+        <RouterLink
+          to="/settings/studios"
+          class="mt-1 flex w-full items-center gap-1.5 rounded-sm border-t border-border px-2 py-1.5 pt-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          @click="studioMenuOpen = false"
+        >
+          <Plus class="h-3.5 w-3.5" />
+          New studio
+        </RouterLink>
       </div>
     </div>
 
@@ -118,6 +135,21 @@ function pick(id: number) {
     <nav class="flex-1 space-y-1 overflow-y-auto p-2">
       <RouterLink
         v-for="item in nav"
+        :key="item.to"
+        :to="item.to"
+        class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        active-class="bg-accent text-accent-foreground font-medium"
+        :title="collapsed ? item.label : undefined"
+        @click="emit('close')"
+      >
+        <component :is="item.icon" class="h-4 w-4 shrink-0" />
+        <span v-if="!collapsed" class="md:inline">{{ item.label }}</span>
+      </RouterLink>
+
+      <div class="my-2 border-t border-border" />
+
+      <RouterLink
+        v-for="item in settingsNav"
         :key="item.to"
         :to="item.to"
         class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"

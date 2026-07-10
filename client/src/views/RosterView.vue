@@ -16,7 +16,7 @@ import {
   PopoverPortal,
   PopoverContent,
 } from 'reka-ui'
-import { AlertTriangle, X, ChevronDown, Check } from 'lucide-vue-next'
+import { AlertTriangle, X, ChevronDown, Check, UserPlus } from 'lucide-vue-next'
 
 type ProgressStatus = 'NotStarted' | 'InProgress' | 'Mastered'
 
@@ -209,6 +209,48 @@ async function setGender(gender: Gender | null) {
   }
 }
 
+// --- Add / edit student -------------------------------------------------
+let tempId = -1
+
+async function addStudent() {
+  const studioId = studioStore.selectedStudioId
+  if (!studioId) return
+  const draft: Student = {
+    id: tempId--,
+    studioId,
+    firstName: 'New',
+    lastName: 'Student',
+    injuryAlert: false,
+  }
+  students.value.push(draft)
+  try {
+    const { data } = await api.post<Student>('/students', draft)
+    Object.assign(draft, data)
+    toast.success('Student added')
+  } catch {
+    /* api.ts already surfaces the error toast; draft stays local */
+  }
+  await openStudent(draft)
+}
+
+async function saveStudentInfo() {
+  const student = detailStudent.value
+  if (!student || student.id < 0) return // not yet persisted
+  try {
+    await api.put(`/students/${student.id}`, student)
+    toast.success('Saved')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+async function toggleInjuryAlert() {
+  const student = detailStudent.value
+  if (!student) return
+  student.injuryAlert = !student.injuryAlert
+  await saveStudentInfo()
+}
+
 async function addNote() {
   const student = detailStudent.value
   const text = newNote.value.trim()
@@ -287,21 +329,30 @@ watch(selectedClassId, async () => {
     </header>
 
     <!-- Class selector -->
-    <div class="mb-6 flex items-center gap-3">
-      <label class="text-sm font-medium">Class</label>
-      <div class="relative">
-        <select
-          v-model="selectedClassId"
-          class="appearance-none rounded-md border border-border bg-background py-2 pl-3 pr-9 text-sm hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          :disabled="classes.length === 0"
-        >
-          <option v-if="classes.length === 0" :value="null">No classes</option>
-          <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-        <ChevronDown
-          class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-        />
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <label class="text-sm font-medium">Class</label>
+        <div class="relative">
+          <select
+            v-model="selectedClassId"
+            class="appearance-none rounded-md border border-border bg-background py-2 pl-3 pr-9 text-sm hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            :disabled="classes.length === 0"
+          >
+            <option v-if="classes.length === 0" :value="null">No classes</option>
+            <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <ChevronDown
+            class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
       </div>
+      <button
+        class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        :disabled="!studioStore.selectedStudioId"
+        @click="addStudent"
+      >
+        <UserPlus class="h-4 w-4" /> Add student
+      </button>
     </div>
 
     <!-- Empty state -->
@@ -451,35 +502,41 @@ watch(selectedClassId, async () => {
 
           <div v-if="detailStudent" class="flex-1 space-y-6 overflow-y-auto px-5 py-4">
             <!-- Info -->
-            <section class="space-y-1 text-sm">
-              <div
-                v-if="detailStudent.injuryAlert"
-                class="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3"
-              >
-                <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <div>
-                  <p class="font-semibold text-destructive">Injury alert</p>
-                  <p class="text-muted-foreground">
-                    {{ detailStudent.movementModifications || 'No modifications recorded.' }}
-                  </p>
-                </div>
+            <section class="space-y-3 text-sm">
+              <div class="grid grid-cols-2 gap-3">
+                <label class="space-y-1">
+                  <span class="text-xs text-muted-foreground">First name</span>
+                  <input
+                    v-model="detailStudent.firstName"
+                    type="text"
+                    class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveStudentInfo"
+                  />
+                </label>
+                <label class="space-y-1">
+                  <span class="text-xs text-muted-foreground">Last name</span>
+                  <input
+                    v-model="detailStudent.lastName"
+                    type="text"
+                    class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveStudentInfo"
+                  />
+                </label>
               </div>
-              <p v-if="detailStudent.parentName">
-                <span class="text-muted-foreground">Parent:</span> {{ detailStudent.parentName }}
-              </p>
-              <p v-if="detailStudent.parentEmail">
-                <span class="text-muted-foreground">Email:</span> {{ detailStudent.parentEmail }}
-              </p>
-              <p v-if="detailStudent.parentPhone">
-                <span class="text-muted-foreground">Phone:</span> {{ detailStudent.parentPhone }}
-              </p>
-              <p v-if="detailStudent.medicalNotes">
-                <span class="text-muted-foreground">Medical:</span> {{ detailStudent.medicalNotes }}
-              </p>
+
+              <label class="block space-y-1">
+                <span class="text-xs text-muted-foreground">Date of birth</span>
+                <input
+                  v-model="detailStudent.dateOfBirth"
+                  type="date"
+                  class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  @change="saveStudentInfo"
+                />
+              </label>
 
               <!-- Gender (drives formation-map color coding) -->
-              <div class="flex items-center gap-3 pt-2">
-                <span class="text-muted-foreground">Gender:</span>
+              <div class="flex items-center gap-3 pt-1">
+                <span class="text-xs text-muted-foreground">Gender</span>
                 <div class="inline-flex overflow-hidden rounded-md border border-border">
                   <button
                     v-for="opt in GENDER_OPTIONS"
@@ -496,6 +553,69 @@ watch(selectedClassId, async () => {
                     {{ opt.label }}
                   </button>
                 </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
+                <label class="space-y-1">
+                  <span class="text-xs text-muted-foreground">Parent name</span>
+                  <input
+                    v-model="detailStudent.parentName"
+                    type="text"
+                    class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveStudentInfo"
+                  />
+                </label>
+                <label class="space-y-1">
+                  <span class="text-xs text-muted-foreground">Parent phone</span>
+                  <input
+                    v-model="detailStudent.parentPhone"
+                    type="text"
+                    class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveStudentInfo"
+                  />
+                </label>
+              </div>
+              <label class="block space-y-1">
+                <span class="text-xs text-muted-foreground">Parent email</span>
+                <input
+                  v-model="detailStudent.parentEmail"
+                  type="email"
+                  class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  @change="saveStudentInfo"
+                />
+              </label>
+              <label class="block space-y-1">
+                <span class="text-xs text-muted-foreground">Medical notes</span>
+                <textarea
+                  v-model="detailStudent.medicalNotes"
+                  rows="2"
+                  class="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  @change="saveStudentInfo"
+                />
+              </label>
+
+              <!-- Injury alert -->
+              <div class="rounded-md border border-border p-3">
+                <label class="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    :checked="detailStudent.injuryAlert"
+                    class="h-4 w-4 rounded border-border accent-destructive"
+                    @change="toggleInjuryAlert"
+                  />
+                  <span class="flex items-center gap-1.5 text-sm font-medium">
+                    <AlertTriangle class="h-4 w-4 text-destructive" />
+                    Injury alert
+                  </span>
+                </label>
+                <textarea
+                  v-if="detailStudent.injuryAlert"
+                  v-model="detailStudent.movementModifications"
+                  rows="2"
+                  placeholder="Movement modifications…"
+                  class="mt-2 w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  @change="saveStudentInfo"
+                />
               </div>
             </section>
 
