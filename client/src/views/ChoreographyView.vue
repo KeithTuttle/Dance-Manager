@@ -1,16 +1,540 @@
 <script setup lang="ts">
-import PagePlaceholder from '@/components/layout/PagePlaceholder.vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { api } from '@/lib/api'
+import { useStudioStore } from '@/stores/studio'
+import type { DanceClass, Routine, Formation, Student, RecitalParticipation } from '@/types'
+import { Download, Plus, Music, Loader2 } from 'lucide-vue-next'
+
+const studioStore = useStudioStore()
+
+// --- Selection state ---
+const classes = ref<DanceClass[]>([])
+const selectedClassId = ref<number | null>(null)
+const routines = ref<Routine[]>([])
+const selectedRoutineId = ref<number | null>(null)
+
+// --- Routine detail (left panel) ---
+const notesDraft = ref('')
+
+// --- Formations (right panel) ---
+const formations = ref<Formation[]>([])
+const selectedFormationId = ref<number | null>(null)
+
+// --- Participating students ---
+const students = ref<Student[]>([])
+const participations = ref<RecitalParticipation[]>([])
+
+const generatingPdf = ref(false)
+
+const selectedRoutine = computed(
+  () => routines.value.find((r) => r.id === selectedRoutineId.value) ?? null,
+)
+const selectedFormation = computed(
+  () => formations.value.find((f) => f.id === selectedFormationId.value) ?? null,
+)
+
+// Students marked IsParticipating for the selected class.
+const participatingStudents = computed(() => {
+  const ids = new Set(
+    participations.value.filter((p) => p.isParticipating).map((p) => p.studentId),
+  )
+  return students.value.filter((s) => ids.has(s.id))
+})
+
+function initials(s: Student): string {
+  const f = s.firstName?.[0] ?? ''
+  const l = s.lastName?.[0] ?? ''
+  return (f + l).toUpperCase() || '?'
+}
+
+// --- Video embed parsing (YouTube / Vimeo) ---
+const embedSrc = computed(() => parseEmbed(selectedRoutine.value?.videoUrl ?? null))
+
+function parseEmbed(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url.trim())
+    const host = u.hostname.replace(/^www\./, '')
+    if (host === 'youtu.be') {
+      const id = u.pathname.slice(1)
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      const id = u.searchParams.get('v')
+      if (id) return `https://www.youtube.com/embed/${id}`
+      // /embed/xxx or /shorts/xxx
+      const m = u.pathname.match(/\/(embed|shorts)\/([^/?]+)/)
+      if (m) return `https://www.youtube.com/embed/${m[2]}`
+      return null
+    }
+    if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+      const m = u.pathname.match(/(\d+)/)
+      return m ? `https://player.vimeo.com/video/${m[1]}` : null
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// --- Coordinate parsing ---
+type Coord = { x: number; y: number }
+type CoordMap = Record<string, Coord>
+
+const coordMap = ref<CoordMap>({})
+
+function parseCoords(json: string | null | undefined): CoordMap {
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json)
+    if (parsed && typeof parsed === 'object') return parsed as CoordMap
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+// Node list = participating students, positioned from coordMap (default spread).
+const nodes = computed(() =>
+  participatingStudents.value.map((s, i) => {
+    const c = coordMap.value[String(s.id)]
+    return {
+      student: s,
+      x: c?.x ?? 50,
+      y: c?.y ?? 10 + ((i * 12) % 80),
+      placed: !!c,
+    }
+  }),
+)
+
+// --- Data loading ---
+async function loadClasses() {
+  const studioId = studioStore.selectedStudioId
+  if (!studioId) {
+    classes.value = []
+    return
+  }
+  try {
+    const { data } = await api.get<DanceClass[]>('/classes', { params: { studioId } })
+    classes.value = data ?? []
+  } catch {
+    classes.value = []
+  }
+  if (!classes.value.some((c) => c.id === selectedClassId.value)) {
+    selectedClassId.value = classes.value[0]?.id ?? null
+  }
+}
+
+async function loadStudents() {
+  const studioId = studioStore.selectedStudioId
+  if (!studioId) {
+    students.value = []
+    return
+  }
+  try {
+    const { data } = await api.get<Student[]>('/students', { params: { studioId } })
+    students.value = data ?? []
+  } catch {
+    students.value = []
+  }
+}
+
+async function loadRoutines() {
+  if (!selectedClassId.value) {
+    routines.value = []
+    selectedRoutineId.value = null
+    return
+  }
+  try {
+    const { data } = await api.get<Routine[]>('/routines', {
+      params: { classId: selectedClassId.value },
+    })
+    routines.value = data ?? []
+  } catch {
+    routines.value = []
+  }
+  if (!routines.value.some((r) => r.id === selectedRoutineId.value)) {
+    selectedRoutineId.value = routines.value[0]?.id ?? null
+  }
+}
+
+async function loadParticipation() {
+  if (!selectedClassId.value) {
+    participations.value = []
+    return
+  }
+  try {
+    const { data } = await api.get<RecitalParticipation[]>('/recitalparticipation', {
+      params: { classId: selectedClassId.value },
+    })
+    participations.value = data ?? []
+  } catch {
+    participations.value = []
+  }
+}
+
+async function loadFormations() {
+  if (!selectedRoutineId.value) {
+    formations.value = []
+    selectedFormationId.value = null
+    return
+  }
+  try {
+    const { data } = await api.get<Formation[]>('/formations', {
+      params: { routineId: selectedRoutineId.value },
+    })
+    formations.value = data ?? []
+  } catch {
+    formations.value = []
+  }
+  if (!formations.value.some((f) => f.id === selectedFormationId.value)) {
+    selectedFormationId.value = formations.value[0]?.id ?? null
+  }
+}
+
+// --- Watchers wiring the cascade ---
+watch(
+  () => studioStore.selectedStudioId,
+  async () => {
+    await Promise.all([loadClasses(), loadStudents()])
+  },
+)
+
+watch(selectedClassId, async () => {
+  await Promise.all([loadRoutines(), loadParticipation()])
+})
+
+watch(selectedRoutineId, () => {
+  notesDraft.value = selectedRoutine.value?.choreographyNotes ?? ''
+  loadFormations()
+})
+
+watch(selectedFormationId, () => {
+  coordMap.value = parseCoords(selectedFormation.value?.studentCoordinates)
+})
+
+onMounted(async () => {
+  if (studioStore.studios.length === 0) {
+    try {
+      await studioStore.fetchStudios()
+    } catch {
+      /* graceful: empty */
+    }
+  }
+  await Promise.all([loadClasses(), loadStudents()])
+})
+
+// --- Save choreography notes on blur ---
+async function saveNotes() {
+  const routine = selectedRoutine.value
+  if (!routine) return
+  if ((routine.choreographyNotes ?? '') === notesDraft.value) return
+  const updated: Routine = { ...routine, choreographyNotes: notesDraft.value }
+  try {
+    await api.put(`/routines/${routine.id}`, updated)
+    const idx = routines.value.findIndex((r) => r.id === routine.id)
+    if (idx !== -1) routines.value[idx] = updated
+  } catch {
+    /* graceful: keep local draft */
+  }
+}
+
+// --- Formation management ---
+async function addFormation() {
+  if (!selectedRoutineId.value) return
+  const payload: Omit<Formation, 'id'> = {
+    routineId: selectedRoutineId.value,
+    formationName: `Formation ${formations.value.length + 1}`,
+    orderIndex: formations.value.length,
+    studentCoordinates: '{}',
+  }
+  try {
+    const { data } = await api.post<Formation>('/formations', payload)
+    formations.value.push(data)
+    selectedFormationId.value = data.id
+  } catch {
+    /* graceful: DB unavailable */
+  }
+}
+
+async function saveFormation() {
+  const formation = selectedFormation.value
+  if (!formation) return
+  const updated: Formation = {
+    ...formation,
+    studentCoordinates: JSON.stringify(coordMap.value),
+  }
+  try {
+    await api.put(`/formations/${formation.id}`, updated)
+    const idx = formations.value.findIndex((f) => f.id === formation.id)
+    if (idx !== -1) formations.value[idx] = updated
+  } catch {
+    /* graceful: DB unavailable */
+  }
+}
+
+// --- Drag handling on the SVG stage ---
+const stageRef = ref<SVGSVGElement | null>(null)
+const draggingId = ref<number | null>(null)
+
+function onPointerDown(studentId: number, e: PointerEvent) {
+  draggingId.value = studentId
+  ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  // Ensure a coord entry exists at the current node position.
+  if (!coordMap.value[String(studentId)]) {
+    const node = nodes.value.find((n) => n.student.id === studentId)
+    coordMap.value[String(studentId)] = { x: node?.x ?? 50, y: node?.y ?? 50 }
+  }
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (draggingId.value === null || !stageRef.value) return
+  const rect = stageRef.value.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  const x = ((e.clientX - rect.left) / rect.width) * 100
+  const y = ((e.clientY - rect.top) / rect.height) * 100
+  coordMap.value[String(draggingId.value)] = {
+    x: Math.min(100, Math.max(0, x)),
+    y: Math.min(100, Math.max(0, y)),
+  }
+}
+
+function onPointerUp() {
+  if (draggingId.value === null) return
+  draggingId.value = null
+  saveFormation()
+}
+
+// --- Generate Sub Handoff PDF ---
+async function generateHandoff() {
+  if (!selectedClassId.value) return
+  generatingPdf.value = true
+  try {
+    const res = await api.get('/subhandoff', {
+      params: { classId: selectedClassId.value },
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sub-handoff.pdf'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    /* graceful: DB unavailable -> no download */
+  } finally {
+    generatingPdf.value = false
+  }
+}
 </script>
 
 <template>
-  <PagePlaceholder
-    title="Choreography & Formations"
-    description="Split-screen routine documentation and stage-formation mapper."
-    :planned="[
-      'Left: embedded YouTube/Vimeo player + rich-text counts & lyrical cues',
-      'Right: interactive 2D stage grid with draggable student-initial nodes',
-      'Formation nodes limited to students marked IsParticipating = true',
-      'Generate Sub Handoff PDF (roster + notes + music + formation snapshots)',
-    ]"
-  />
+  <div class="flex h-full flex-col">
+    <!-- Header + selectors -->
+    <header class="border-b border-border px-4 py-3 sm:px-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-xl font-semibold tracking-tight">Choreography &amp; Formations</h1>
+          <p class="mt-0.5 text-sm text-muted-foreground">
+            Document routines and map the stage. Drag student nodes to build formations.
+          </p>
+        </div>
+        <button
+          class="inline-flex items-center gap-2 rounded-md border border-border bg-foreground px-3 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          :disabled="!selectedClassId || generatingPdf"
+          @click="generateHandoff"
+        >
+          <Loader2 v-if="generatingPdf" class="h-4 w-4 animate-spin" />
+          <Download v-else class="h-4 w-4" />
+          Generate Sub Handoff
+        </button>
+      </div>
+
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">Class</span>
+          <select
+            v-model="selectedClassId"
+            class="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          >
+            <option v-if="classes.length === 0" :value="null">No classes</option>
+            <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">Routine</span>
+          <select
+            v-model="selectedRoutineId"
+            class="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          >
+            <option v-if="routines.length === 0" :value="null">No routines</option>
+            <option v-for="r in routines" :key="r.id" :value="r.id">
+              {{ r.songTitle || 'Untitled' }}
+            </option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <!-- Empty state -->
+    <div v-if="!selectedRoutine" class="flex flex-1 items-center justify-center p-8">
+      <div class="max-w-sm rounded-lg border border-dashed border-border p-8 text-center">
+        <Music class="mx-auto h-8 w-8 text-muted-foreground" />
+        <p class="mt-3 text-sm font-medium">No routine selected</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Select a class and routine above to document choreography and map formations. If nothing
+          appears, the database may be offline.
+        </p>
+      </div>
+    </div>
+
+    <!-- 50/50 split -->
+    <div v-else class="grid flex-1 grid-cols-1 gap-px overflow-hidden bg-border lg:grid-cols-2">
+      <!-- LEFT: video + notes -->
+      <div class="flex flex-col overflow-y-auto bg-background p-4 sm:p-6">
+        <div class="mb-4">
+          <div class="text-sm font-medium">{{ selectedRoutine.songTitle || 'Untitled' }}</div>
+          <div v-if="selectedRoutine.artist" class="text-sm text-muted-foreground">
+            {{ selectedRoutine.artist }}
+          </div>
+        </div>
+
+        <div class="aspect-video w-full overflow-hidden rounded-md border border-border bg-black">
+          <iframe
+            v-if="embedSrc"
+            :src="embedSrc"
+            class="h-full w-full"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          />
+          <div
+            v-else
+            class="flex h-full w-full items-center justify-center text-center text-sm text-muted-foreground"
+          >
+            <span>
+              {{
+                selectedRoutine.videoUrl ? 'Unsupported video link' : 'No video link for this routine'
+              }}
+            </span>
+          </div>
+        </div>
+
+        <label class="mt-4 text-sm font-medium">Choreography notes (counts &amp; lyrical cues)</label>
+        <textarea
+          v-model="notesDraft"
+          class="mt-2 min-h-[200px] flex-1 resize-y rounded-md border border-border bg-background p-3 font-mono text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
+          placeholder="8-count breakdowns, lyrical cues, entrances/exits…"
+          @blur="saveNotes"
+        />
+      </div>
+
+      <!-- RIGHT: stage grid -->
+      <div class="flex flex-col overflow-y-auto bg-background p-4 sm:p-6">
+        <!-- Formation selector -->
+        <div class="mb-4 flex flex-wrap items-center gap-2">
+          <span class="text-sm font-medium">Formations</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="f in formations"
+              :key="f.id"
+              class="rounded-md border px-2.5 py-1 text-xs transition-colors"
+              :class="
+                f.id === selectedFormationId
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border hover:bg-accent'
+              "
+              @click="selectedFormationId = f.id"
+            >
+              {{ f.formationName || 'Formation' }}
+            </button>
+          </div>
+          <button
+            class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+            @click="addFormation"
+          >
+            <Plus class="h-3.5 w-3.5" /> Add
+          </button>
+        </div>
+
+        <!-- Stage -->
+        <div
+          v-if="!selectedFormation"
+          class="flex flex-1 items-center justify-center rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground"
+        >
+          No formations yet. Click "Add" to create one.
+        </div>
+        <template v-else>
+          <div class="relative w-full">
+            <svg
+              ref="stageRef"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              class="aspect-[4/3] w-full touch-none select-none rounded-md border border-border bg-muted"
+              @pointermove="onPointerMove"
+              @pointerup="onPointerUp"
+              @pointerleave="onPointerUp"
+            >
+              <!-- grid lines -->
+              <g stroke="currentColor" class="text-border" stroke-width="0.2">
+                <line v-for="i in 3" :key="`v${i}`" :x1="i * 25" y1="0" :x2="i * 25" y2="100" />
+                <line v-for="i in 3" :key="`h${i}`" x1="0" :y1="i * 25" x2="100" :y2="i * 25" />
+              </g>
+              <!-- front-of-stage marker -->
+              <text x="50" y="98" text-anchor="middle" font-size="3" class="fill-muted-foreground">
+                FRONT OF STAGE
+              </text>
+
+              <!-- nodes -->
+              <g
+                v-for="n in nodes"
+                :key="n.student.id"
+                class="cursor-grab"
+                :class="{ 'cursor-grabbing': draggingId === n.student.id }"
+                @pointerdown="onPointerDown(n.student.id, $event)"
+              >
+                <circle
+                  :cx="n.x"
+                  :cy="n.y"
+                  r="4.5"
+                  :class="
+                    draggingId === n.student.id
+                      ? 'fill-foreground'
+                      : 'fill-background stroke-foreground'
+                  "
+                  stroke-width="0.5"
+                />
+                <text
+                  :x="n.x"
+                  :y="n.y"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  font-size="3"
+                  class="pointer-events-none"
+                  :class="draggingId === n.student.id ? 'fill-background' : 'fill-foreground'"
+                >
+                  {{ initials(n.student) }}
+                </text>
+              </g>
+            </svg>
+          </div>
+
+          <p class="mt-3 text-xs text-muted-foreground">
+            Drag nodes to position dancers. {{ participatingStudents.length }} participating
+            student(s). Positions save automatically.
+          </p>
+          <div
+            v-if="participatingStudents.length === 0"
+            class="mt-2 text-xs text-muted-foreground"
+          >
+            No participating students found for this class (mark students as participating in the
+            Recital view, or the database may be offline).
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
 </template>
