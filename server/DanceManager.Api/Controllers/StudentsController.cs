@@ -25,7 +25,7 @@ public class StudentsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Student>> Get(int id)
     {
-        var student = await _db.Students.FindAsync(id);
+        var student = await _db.FindScopedAsync<Student>(id);
         return student is null ? NotFound() : student;
     }
 
@@ -41,15 +41,13 @@ public class StudentsController : ControllerBase
     public async Task<IActionResult> Update(int id, Student input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var student = await _db.Students.FindAsync(id);
+        var student = await _db.FindScopedAsync<Student>(id);
         if (student is null) return NotFound();
         _db.Students.Remove(student);
         await _db.SaveChangesAsync();

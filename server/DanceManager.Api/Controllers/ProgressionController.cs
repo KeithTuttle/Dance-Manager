@@ -25,7 +25,7 @@ public class ProgressionController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ProgressionMatrix>> Get([FromQuery] int classId)
     {
-        var cls = await _db.Classes.FindAsync(classId);
+        var cls = await _db.FindScopedAsync<DanceClass>(classId);
         if (cls is null) return NotFound();
 
         // Milestones for this class: studio-wide plus class-scoped.

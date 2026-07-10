@@ -25,7 +25,7 @@ public class RoutinesController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Routine>> Get(int id)
     {
-        var routine = await _db.Routines.FindAsync(id);
+        var routine = await _db.FindScopedAsync<Routine>(id);
         return routine is null ? NotFound() : routine;
     }
 
@@ -41,15 +41,13 @@ public class RoutinesController : ControllerBase
     public async Task<IActionResult> Update(int id, Routine input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var routine = await _db.Routines.FindAsync(id);
+        var routine = await _db.FindScopedAsync<Routine>(id);
         if (routine is null) return NotFound();
         _db.Routines.Remove(routine);
         await _db.SaveChangesAsync();

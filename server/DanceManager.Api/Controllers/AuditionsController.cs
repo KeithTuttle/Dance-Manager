@@ -20,7 +20,7 @@ public class AuditionsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Audition>> Get(int id)
     {
-        var audition = await _db.Auditions.FindAsync(id);
+        var audition = await _db.FindScopedAsync<Audition>(id);
         return audition is null ? NotFound() : audition;
     }
 
@@ -36,15 +36,13 @@ public class AuditionsController : ControllerBase
     public async Task<IActionResult> Update(int id, Audition input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var audition = await _db.Auditions.FindAsync(id);
+        var audition = await _db.FindScopedAsync<Audition>(id);
         if (audition is null) return NotFound();
         _db.Auditions.Remove(audition);
         await _db.SaveChangesAsync();

@@ -33,6 +33,7 @@ export interface Student {
   medicalNotes?: string | null
   injuryAlert: boolean
   movementModifications?: string | null
+  gender?: Gender | null
 }
 
 export interface StudentNote {

@@ -25,7 +25,7 @@ public class FormationsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Formation>> Get(int id)
     {
-        var formation = await _db.Formations.FindAsync(id);
+        var formation = await _db.FindScopedAsync<Formation>(id);
         return formation is null ? NotFound() : formation;
     }
 
@@ -44,15 +44,13 @@ public class FormationsController : ControllerBase
     public async Task<IActionResult> Update(int id, Formation input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var formation = await _db.Formations.FindAsync(id);
+        var formation = await _db.FindScopedAsync<Formation>(id);
         if (formation is null) return NotFound();
         _db.Formations.Remove(formation);
         await _db.SaveChangesAsync();

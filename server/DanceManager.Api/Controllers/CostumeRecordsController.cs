@@ -41,7 +41,7 @@ public class CostumeRecordsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<CostumeRecord>> Get(int id)
     {
-        var record = await _db.CostumeRecords.FindAsync(id);
+        var record = await _db.FindScopedAsync<CostumeRecord>(id);
         return record is null ? NotFound() : record;
     }
 
@@ -61,15 +61,13 @@ public class CostumeRecordsController : ControllerBase
     public async Task<IActionResult> Update(int id, CostumeRecord input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var record = await _db.CostumeRecords.FindAsync(id);
+        var record = await _db.FindScopedAsync<CostumeRecord>(id);
         if (record is null) return NotFound();
         _db.CostumeRecords.Remove(record);
         await _db.SaveChangesAsync();

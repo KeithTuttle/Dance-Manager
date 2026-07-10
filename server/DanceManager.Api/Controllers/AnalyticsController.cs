@@ -34,7 +34,7 @@ public class AnalyticsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AnalyticsResponse>> Get([FromQuery] int studioId)
     {
-        var studio = await _db.Studios.FindAsync(studioId);
+        var studio = await _db.FindScopedAsync<Studio>(studioId);
         if (studio is null) return NotFound();
 
         // Class ids belonging to this studio; everything else is filtered by these.

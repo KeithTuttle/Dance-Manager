@@ -42,7 +42,7 @@ public class RecitalParticipationController : ControllerBase
     public async Task<ActionResult<RecitalParticipation>> Upsert(RecitalParticipation input)
     {
         var existing = await _db.RecitalParticipations
-            .FindAsync(input.StudentId, input.ClassId);
+            .FirstOrDefaultAsync(rp => rp.StudentId == input.StudentId && rp.ClassId == input.ClassId);
 
         if (existing is null)
         {

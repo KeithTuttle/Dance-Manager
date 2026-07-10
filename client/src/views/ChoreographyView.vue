@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/lib/api'
 import { useStudioStore } from '@/stores/studio'
-import type { DanceClass, Routine, Formation, Student, RecitalParticipation } from '@/types'
+import type { DanceClass, Routine, Formation, Student, RecitalParticipation, Gender } from '@/types'
 import { Download, Plus, Music, Loader2 } from 'lucide-vue-next'
 
 const studioStore = useStudioStore()
@@ -45,6 +45,29 @@ function initials(s: Student): string {
   const f = s.firstName?.[0] ?? ''
   const l = s.lastName?.[0] ?? ''
   return (f + l).toUpperCase() || '?'
+}
+
+// --- Stage geometry (SVG user units) ---
+// A rectangular grid inset within the viewBox, leaving room for the UPSTAGE
+// label (top) and the number ruler + DOWNSTAGE label (bottom). The container's
+// aspect matches VB_W:VB_H so `meet` fills it exactly and nodes stay round.
+const VB_W = 320
+const VB_H = 210
+const GX0 = 16 // grid left
+const GY0 = 28 // grid top (below UPSTAGE)
+const GW = VB_W - GX0 * 2 // grid width (288)
+const GH = 150 // grid height
+const GY1 = GY0 + GH // grid bottom
+const UNIT = GW / 20 // one ruler unit (−10…+10 across the width)
+const NODE_R = 9
+
+// Boy/girl color coding (kept legible in light + dark; initials always shown).
+const GENDER_FILL = { Boys: '#2563eb', Girls: '#db2777', none: '#94a3b8' }
+function genderFill(g?: Gender | null): string {
+  return g === 'Boys' ? GENDER_FILL.Boys : g === 'Girls' ? GENDER_FILL.Girls : GENDER_FILL.none
+}
+function genderText(g?: Gender | null): string {
+  return g ? '#ffffff' : '#0f172a'
 }
 
 // --- Video embed parsing (YouTube / Vimeo) ---
@@ -291,8 +314,12 @@ function onPointerMove(e: PointerEvent) {
   if (draggingId.value === null || !stageRef.value) return
   const rect = stageRef.value.getBoundingClientRect()
   if (rect.width === 0 || rect.height === 0) return
-  const x = ((e.clientX - rect.left) / rect.width) * 100
-  const y = ((e.clientY - rect.top) / rect.height) * 100
+  // client px -> viewBox units (aspect matches, so this is linear), then map
+  // the grid area (inset by GX0/GY0) back to the stored 0–100 percentages.
+  const vbX = ((e.clientX - rect.left) / rect.width) * VB_W
+  const vbY = ((e.clientY - rect.top) / rect.height) * VB_H
+  const x = ((vbX - GX0) / GW) * 100
+  const y = ((vbY - GY0) / GH) * 100
   coordMap.value[String(draggingId.value)] = {
     x: Math.min(100, Math.max(0, x)),
     y: Math.min(100, Math.max(0, y)),
@@ -471,24 +498,76 @@ async function generateHandoff() {
           <div class="relative w-full">
             <svg
               ref="stageRef"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              class="aspect-[4/3] w-full touch-none select-none rounded-md border border-border bg-muted"
+              :viewBox="`0 0 ${VB_W} ${VB_H}`"
+              preserveAspectRatio="xMidYMid meet"
+              class="aspect-[32/21] w-full touch-none select-none rounded-md border border-border bg-muted"
               @pointermove="onPointerMove"
               @pointerup="onPointerUp"
               @pointerleave="onPointerUp"
             >
-              <!-- grid lines -->
-              <g stroke="currentColor" class="text-border" stroke-width="0.2">
-                <line v-for="i in 3" :key="`v${i}`" :x1="i * 25" y1="0" :x2="i * 25" y2="100" />
-                <line v-for="i in 3" :key="`h${i}`" x1="0" :y1="i * 25" x2="100" :y2="i * 25" />
-              </g>
-              <!-- front-of-stage marker -->
-              <text x="50" y="98" text-anchor="middle" font-size="3" class="fill-muted-foreground">
-                FRONT OF STAGE
+              <!-- UPSTAGE (back of stage) -->
+              <text
+                :x="VB_W / 2"
+                :y="16"
+                text-anchor="middle"
+                font-size="8"
+                letter-spacing="1.5"
+                class="fill-muted-foreground font-semibold"
+              >
+                UPSTAGE
               </text>
 
-              <!-- nodes -->
+              <!-- grid border -->
+              <rect
+                :x="GX0"
+                :y="GY0"
+                :width="GW"
+                :height="GH"
+                fill="none"
+                class="stroke-border"
+                stroke-width="1"
+              />
+              <!-- grid lines -->
+              <g class="stroke-border" stroke-width="0.4">
+                <line
+                  v-for="k in 21"
+                  :key="`v${k}`"
+                  :x1="GX0 + (k - 1) * UNIT"
+                  :y1="GY0"
+                  :x2="GX0 + (k - 1) * UNIT"
+                  :y2="GY1"
+                  :class="k - 1 === 10 ? 'stroke-muted-foreground' : ''"
+                />
+                <line
+                  v-for="r in 5"
+                  :key="`h${r}`"
+                  :x1="GX0"
+                  :y1="GY0 + (r * GH) / 6"
+                  :x2="GX0 + GW"
+                  :y2="GY0 + (r * GH) / 6"
+                />
+              </g>
+
+              <!-- number ruler: 10 … 0 … 10 -->
+              <g class="fill-muted-foreground" font-size="7" text-anchor="middle">
+                <text v-for="k in 21" :key="`num${k}`" :x="GX0 + (k - 1) * UNIT" :y="GY1 + 13">
+                  {{ Math.abs(k - 11) }}
+                </text>
+              </g>
+
+              <!-- DOWNSTAGE (front / audience) -->
+              <text
+                :x="VB_W / 2"
+                :y="GY1 + 30"
+                text-anchor="middle"
+                font-size="8"
+                letter-spacing="1.5"
+                class="fill-muted-foreground font-semibold"
+              >
+                DOWNSTAGE
+              </text>
+
+              <!-- nodes (colored by gender; initials always shown) -->
               <g
                 v-for="n in nodes"
                 :key="n.student.id"
@@ -497,24 +576,22 @@ async function generateHandoff() {
                 @pointerdown="onPointerDown(n.student.id, $event)"
               >
                 <circle
-                  :cx="n.x"
-                  :cy="n.y"
-                  r="4.5"
-                  :class="
-                    draggingId === n.student.id
-                      ? 'fill-foreground'
-                      : 'fill-background stroke-foreground'
-                  "
-                  stroke-width="0.5"
+                  :cx="GX0 + (n.x / 100) * GW"
+                  :cy="GY0 + (n.y / 100) * GH"
+                  :r="NODE_R"
+                  :fill="genderFill(n.student.gender)"
+                  :stroke="draggingId === n.student.id ? '#0f172a' : 'rgba(15,23,42,0.25)'"
+                  :stroke-width="draggingId === n.student.id ? 1.75 : 0.75"
                 />
                 <text
-                  :x="n.x"
-                  :y="n.y"
+                  :x="GX0 + (n.x / 100) * GW"
+                  :y="GY0 + (n.y / 100) * GH"
                   text-anchor="middle"
                   dominant-baseline="central"
-                  font-size="3"
+                  font-size="7"
+                  font-weight="600"
+                  :fill="genderText(n.student.gender)"
                   class="pointer-events-none"
-                  :class="draggingId === n.student.id ? 'fill-background' : 'fill-foreground'"
                 >
                   {{ initials(n.student) }}
                 </text>
@@ -522,10 +599,27 @@ async function generateHandoff() {
             </svg>
           </div>
 
-          <p class="mt-3 text-xs text-muted-foreground">
-            Drag nodes to position dancers. {{ participatingStudents.length }} participating
-            student(s). Positions save automatically.
-          </p>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-muted-foreground">
+              Drag nodes to position dancers. {{ participatingStudents.length }} participating
+              student(s). Positions save automatically.
+            </p>
+            <!-- Gender legend -->
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full" :style="{ background: GENDER_FILL.Boys }" />
+                Boys
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full" :style="{ background: GENDER_FILL.Girls }" />
+                Girls
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full" :style="{ background: GENDER_FILL.none }" />
+                Unspecified
+              </span>
+            </div>
+          </div>
           <div
             v-if="participatingStudents.length === 0"
             class="mt-2 text-xs text-muted-foreground"

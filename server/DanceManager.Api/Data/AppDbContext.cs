@@ -52,6 +52,7 @@ public class AppDbContext : DbContext
         b.Entity<CostumeRecord>().Property(x => x.OrderStatus).HasConversion<string>();
         b.Entity<CostumeRecord>().Property(x => x.FeeAmount).HasColumnType("numeric(10,2)");
         b.Entity<CostumeOption>().Property(x => x.Gender).HasConversion<string>();
+        b.Entity<Student>().Property(x => x.Gender).HasConversion<string>();
         b.Entity<AuditionCandidate>().Property(x => x.Decision).HasConversion<string>();
         b.Entity<StudentMilestoneStatus>().Property(x => x.Status).HasConversion<string>();
         b.Entity<Membership>().Property(x => x.Role).HasConversion<string>();

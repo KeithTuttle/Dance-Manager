@@ -20,7 +20,7 @@ public class StudiosController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Studio>> Get(int id)
     {
-        var studio = await _db.Studios.FindAsync(id);
+        var studio = await _db.FindScopedAsync<Studio>(id);
         return studio is null ? NotFound() : studio;
     }
 
@@ -36,15 +36,13 @@ public class StudiosController : ControllerBase
     public async Task<IActionResult> Update(int id, Studio input)
     {
         if (id != input.Id) return BadRequest();
-        _db.Entry(input).State = EntityState.Modified;
-        await _db.SaveChangesAsync();
-        return NoContent();
+        return await _db.UpdateScopedAsync(id, input) ? NoContent() : NotFound();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var studio = await _db.Studios.FindAsync(id);
+        var studio = await _db.FindScopedAsync<Studio>(id);
         if (studio is null) return NotFound();
         _db.Studios.Remove(studio);
         await _db.SaveChangesAsync();

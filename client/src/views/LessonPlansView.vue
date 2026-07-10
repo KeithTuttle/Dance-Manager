@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ChevronDown, Plus, Loader2, NotebookPen } from 'lucide-vue-next'
+import { ChevronDown, Plus, Loader2, NotebookPen, Trash2 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, LessonPlanEntry } from '@/types'
 import type { LessonPlanField, NewLessonPlanEntry } from './lessonPlans/types'
@@ -121,6 +123,26 @@ async function addWeek() {
     // DB unavailable: leave state untouched, no crash.
   } finally {
     adding.value = false
+  }
+}
+
+async function deleteEntry(entry: LessonPlanEntry) {
+  if (
+    !(await confirm({
+      title: 'Delete this week’s plan?',
+      message: `The entry for the week of ${formatWeekOf(entry.weekOf)} will be permanently removed.`,
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = entries.value
+  entries.value = entries.value.filter((e) => e.id !== entry.id)
+  try {
+    await api.delete(`/lessonplanentries/${entry.id}`)
+    toast.success('Lesson plan deleted')
+  } catch {
+    entries.value = prev // restore on failure (api.ts already toasts the error)
   }
 }
 
@@ -251,8 +273,15 @@ watch(selectedClassId, loadEntries)
           :key="entry.id"
           class="grid grid-cols-[10rem_1fr_1fr_1fr] border-b border-border last:border-b-0"
         >
-          <div class="px-4 py-3 text-sm font-medium">
-            {{ formatWeekOf(entry.weekOf) }}
+          <div class="flex flex-col justify-between px-4 py-3">
+            <span class="text-sm font-medium">{{ formatWeekOf(entry.weekOf) }}</span>
+            <button
+              class="mt-2 inline-flex w-fit items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
+              @click="deleteEntry(entry)"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+              Delete
+            </button>
           </div>
           <div class="border-l border-border">
             <textarea
