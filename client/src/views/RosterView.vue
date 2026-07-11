@@ -17,7 +17,7 @@ import {
   PopoverPortal,
   PopoverContent,
 } from 'reka-ui'
-import { AlertTriangle, X, ChevronDown, Check, UserPlus, Plus, Trash2 } from 'lucide-vue-next'
+import { AlertTriangle, X, ChevronDown, Check, UserPlus, UserMinus, Plus, Trash2 } from 'lucide-vue-next'
 
 type ProgressStatus = 'NotStarted' | 'InProgress' | 'Mastered'
 
@@ -45,10 +45,18 @@ const studioStore = useStudioStore()
 const classes = ref<DanceClass[]>([])
 const selectedClassId = ref<number | null>(null)
 const milestones = ref<Milestone[]>([])
-const students = ref<Student[]>([])
+const students = ref<Student[]>([]) // the class roster (enrolled students)
+const allStudents = ref<Student[]>([]) // every student in the studio (for the enroll picker)
 const statuses = ref<ProgressionCell[]>([])
 const participation = ref<RecitalParticipation[]>([])
 const loading = ref(false)
+
+// Studio students not yet enrolled in the selected class.
+const enrollTargetId = ref<number | null>(null)
+const unenrolledStudents = computed(() => {
+  const enrolled = new Set(students.value.map((s) => s.id))
+  return allStudents.value.filter((s) => !enrolled.has(s.id))
+})
 
 // Which cell's status dropdown is open (`${studentId}:${milestoneId}` or null).
 const openCell = ref<string | null>(null)
@@ -141,7 +149,23 @@ async function loadMatrix() {
   } catch {
     participation.value = []
   }
+  await loadAllStudents()
   loading.value = false
+}
+
+// All studio students (for the "enroll an existing student" picker).
+async function loadAllStudents() {
+  const studioId = studioStore.selectedStudioId
+  if (!studioId) {
+    allStudents.value = []
+    return
+  }
+  try {
+    const { data } = await api.get<Student[]>('/students', { params: { studioId } })
+    allStudents.value = data ?? []
+  } catch {
+    allStudents.value = []
+  }
 }
 
 // --- Recital participation (per student, scoped to the selected class) ---
@@ -288,28 +312,66 @@ async function setGender(gender: Gender | null) {
   }
 }
 
-// --- Add / edit student -------------------------------------------------
-let tempId = -1
-
-async function addStudent() {
-  const studioId = studioStore.selectedStudioId
-  if (!studioId) return
-  const draft: Student = {
-    id: tempId--,
-    studioId,
-    firstName: 'New',
-    lastName: 'Student',
-    injuryAlert: false,
-  }
-  students.value.push(draft)
+// --- Roster: enroll / create / remove-from-class -------------------------
+// Enroll an existing studio student into the selected class.
+async function enrollExisting() {
+  const studentId = enrollTargetId.value
+  const classId = selectedClassId.value
+  if (!studentId || !classId) return
   try {
-    const { data } = await api.post<Student>('/students', draft)
-    Object.assign(draft, data)
-    toast.success('Student added')
+    await api.post('/enrollments', { studentId, classId })
+    enrollTargetId.value = null
+    toast.success('Student enrolled')
+    await loadMatrix()
   } catch {
-    /* api.ts already surfaces the error toast; draft stays local */
+    /* api.ts already surfaces the error toast */
   }
-  await openStudent(draft)
+}
+
+// Create a brand-new studio student and enroll them in this class.
+async function createAndEnroll() {
+  const studioId = studioStore.selectedStudioId
+  const classId = selectedClassId.value
+  if (!studioId || !classId) return
+  try {
+    const { data: student } = await api.post<Student>('/students', {
+      studioId,
+      firstName: 'New',
+      lastName: 'Student',
+      injuryAlert: false,
+    })
+    await api.post('/enrollments', { studentId: student.id, classId })
+    toast.success('Student added')
+    await loadMatrix()
+    // Open the freshly-created roster row so its name/details can be edited.
+    const rosterItem = students.value.find((s) => s.id === student.id) ?? student
+    await openStudent(rosterItem)
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
+// Unenroll a student from THIS class only (they stay in the studio).
+async function removeFromClass(student: Student) {
+  const classId = selectedClassId.value
+  if (!classId) return
+  if (
+    !(await confirm({
+      title: `Remove ${studentName(student)} from ${selectedClassName.value || 'this class'}?`,
+      message: 'This only unenrolls them from this class. They stay in the studio and any other classes.',
+      confirmText: 'Remove from class',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = students.value
+  students.value = students.value.filter((s) => s.id !== student.id)
+  try {
+    await api.delete('/enrollments', { params: { studentId: student.id, classId } })
+    toast.success('Removed from class')
+  } catch {
+    students.value = prev
+  }
 }
 
 async function deleteStudent() {
@@ -480,12 +542,34 @@ watch(selectedClassId, async () => {
         >
           <Plus class="h-4 w-4" /> Add milestone
         </button>
+        <!-- Enroll an existing studio student into this class -->
+        <div class="flex items-center gap-1.5">
+          <select
+            v-model="enrollTargetId"
+            class="rounded-md border border-border bg-background px-2 py-2 text-sm disabled:opacity-50"
+            :disabled="!selectedClassId || unenrolledStudents.length === 0"
+          >
+            <option :value="null" disabled>
+              {{ unenrolledStudents.length === 0 ? 'All studio students enrolled' : 'Enroll a student…' }}
+            </option>
+            <option v-for="s in unenrolledStudents" :key="s.id" :value="s.id">
+              {{ s.lastName }}, {{ s.firstName }}
+            </option>
+          </select>
+          <button
+            class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            :disabled="enrollTargetId === null"
+            @click="enrollExisting"
+          >
+            <UserPlus class="h-4 w-4" /> Enroll
+          </button>
+        </div>
         <button
           class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          :disabled="!studioStore.selectedStudioId"
-          @click="addStudent"
+          :disabled="!selectedClassId"
+          @click="createAndEnroll"
         >
-          <UserPlus class="h-4 w-4" /> Add student
+          <Plus class="h-4 w-4" /> New student
         </button>
       </div>
     </div>
@@ -497,7 +581,7 @@ watch(selectedClassId, async () => {
     >
       <p class="mb-1 font-medium text-foreground">Nothing to show yet</p>
       <p v-if="!selectedClassId">Select a class to view its roster and progression matrix.</p>
-      <p v-else>No students found for this class.</p>
+      <p v-else>No students enrolled in this class yet. Use “Enroll a student…” or “New student” above.</p>
     </div>
 
     <template v-else>
@@ -583,6 +667,14 @@ watch(selectedClassId, async () => {
                       </PopoverContent>
                     </PopoverPortal>
                   </PopoverRoot>
+                  <button
+                    class="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    :title="`Remove from ${selectedClassName || 'class'}`"
+                    aria-label="Remove from class"
+                    @click="removeFromClass(s)"
+                  >
+                    <UserMinus class="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </td>
 

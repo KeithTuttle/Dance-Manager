@@ -34,9 +34,9 @@ public class ProgressionController : ControllerBase
             .OrderBy(m => m.Name)
             .ToListAsync();
 
-        // Students belonging to the class's studio.
+        // Students enrolled in this class (the class roster).
         var students = await _db.Students
-            .Where(s => s.StudioId == cls.StudioId)
+            .Where(s => _db.Enrollments.Any(e => e.StudentId == s.Id && e.ClassId == classId))
             .OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
             .ToListAsync();
 
