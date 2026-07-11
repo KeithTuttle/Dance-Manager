@@ -11,13 +11,14 @@ QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load user-secrets (the Supabase connection string) explicitly by id in dev.
-// CreateBuilder already does this, but only via the UserSecretsId *compiled into
-// the assembly* — a stale/incremental build (common in VS Code) can miss it and
-// silently fall back to the localhost placeholder. Referencing the id directly
-// makes the secret load regardless of build state.
-if (builder.Environment.IsDevelopment())
-    builder.Configuration.AddUserSecrets("f98fb171-b667-400e-968f-b9058a318e6e");
+// Load user-secrets (the local Supabase connection string) explicitly by id.
+// NOT gated on the environment: VS Code's `dotnet run` can default to the
+// Production environment (when it doesn't apply launchSettings), which would
+// otherwise skip user-secrets and silently fall back to the localhost
+// placeholder. On a real deployment the secrets file doesn't exist, so this is
+// a harmless no-op there and the platform's ConnectionStrings__Default env var
+// is used instead.
+builder.Configuration.AddUserSecrets("f98fb171-b667-400e-968f-b9058a318e6e");
 
 const string CorsPolicy = "spa";
 
@@ -126,7 +127,8 @@ if (dbHost is "localhost" or "127.0.0.1")
 }
 else
 {
-    app.Logger.LogInformation("Database host: {DbHost}", dbHost);
+    app.Logger.LogInformation(
+        "Environment: {Env}; Database host: {DbHost}", app.Environment.EnvironmentName, dbHost);
 }
 
 if (!authEnabled)

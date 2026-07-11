@@ -18,7 +18,10 @@
       "label": "api: run",
       "type": "shell",
       "command": "dotnet run",
-      "options": { "cwd": "${workspaceFolder}/server/DanceManager.Api" },
+      "options": {
+        "cwd": "${workspaceFolder}/server/DanceManager.Api",
+        "env": { "ASPNETCORE_ENVIRONMENT": "Development" }
+      },
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
