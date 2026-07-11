@@ -106,6 +106,29 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Log which database we actually resolved (no secrets) so a stale build silently
+// falling back to the localhost placeholder is obvious in the terminal instead of
+// a wall of "connection refused" errors.
+var dbHost = "unknown";
+try
+{
+    dbHost = new Npgsql.NpgsqlConnectionStringBuilder(
+        builder.Configuration.GetConnectionString("Default")).Host ?? "unknown";
+}
+catch { /* unparseable / missing */ }
+
+if (dbHost is "localhost" or "127.0.0.1")
+{
+    app.Logger.LogWarning(
+        "Database host is '{DbHost}' — this is the appsettings placeholder, meaning the Supabase " +
+        "connection string from user-secrets did NOT load. You are likely running a STALE build: stop " +
+        "any leftover 'DanceManager.Api' / 'dotnet run' processes and rebuild (dotnet build). ", dbHost);
+}
+else
+{
+    app.Logger.LogInformation("Database host: {DbHost}", dbHost);
+}
+
 if (!authEnabled)
 {
     app.Logger.LogWarning(
