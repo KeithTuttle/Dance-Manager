@@ -296,6 +296,28 @@ async function saveRoutineFields() {
   }
 }
 
+async function deleteRoutine() {
+  const routine = selectedRoutine.value
+  if (!routine) return
+  if (
+    !(await confirm({
+      title: `Delete “${routine.songTitle || 'this routine'}”?`,
+      message: 'This removes the routine and all of its formations.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  try {
+    await api.delete(`/routines/${routine.id}`)
+    routines.value = routines.value.filter((r) => r.id !== routine.id)
+    selectedRoutineId.value = routines.value[0]?.id ?? null
+    toast.success('Routine deleted')
+  } catch {
+    /* api.ts already surfaces the error toast */
+  }
+}
+
 // --- Formation management ---
 async function addFormation() {
   if (!selectedRoutineId.value) return
@@ -475,6 +497,13 @@ async function generateHandoff() {
           @click="addRoutine"
         >
           <Plus class="h-3.5 w-3.5" /> Add routine
+        </button>
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          :disabled="!selectedRoutine"
+          @click="deleteRoutine"
+        >
+          <Trash2 class="h-3.5 w-3.5" /> Delete routine
         </button>
       </div>
     </header>

@@ -2,6 +2,7 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { api } from '@/lib/api'
 import { confirm } from '@/lib/confirm'
+import { toast } from '@/lib/toast'
 import type { Audition, AuditionCandidate, AuditionDecision } from '@/types'
 import { Plus, Trash2, X, ChevronDown, Check } from 'lucide-vue-next'
 
@@ -152,6 +153,28 @@ async function persistAudition(a: Audition) {
     await api.put(`/auditions/${a.id}`, a)
   } catch {
     // Ignore persistence failure (no DB); local state already updated.
+  }
+}
+
+async function deleteAudition() {
+  const a = selectedAudition.value
+  if (!a) return
+  if (
+    !(await confirm({
+      title: `Delete “${a.title || 'this audition'}”?`,
+      message: 'This removes the audition and all of its candidates and scores.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  try {
+    await api.delete(`/auditions/${a.id}`)
+    auditions.value = auditions.value.filter((x) => x.id !== a.id)
+    selectedAuditionId.value = auditions.value[0]?.id ?? null
+    toast.success('Audition deleted')
+  } catch {
+    /* api.ts already surfaces the error toast */
   }
 }
 
@@ -330,6 +353,13 @@ onMounted(fetchAuditions)
             </button>
           </div>
         </div>
+        <button
+          v-if="selectedAudition"
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          @click="deleteAudition"
+        >
+          <Trash2 class="h-4 w-4" /> Delete
+        </button>
       </div>
 
       <!-- Header note: rating scale + open spots -->

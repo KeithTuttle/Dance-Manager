@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { ArrowUp, ArrowDown, Table2, Plus } from 'lucide-vue-next'
+import { ArrowUp, ArrowDown, Table2, Plus, Trash2 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
+import { confirm } from '@/lib/confirm'
 import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type {
@@ -202,6 +203,25 @@ function togglePaid(rec: CostumeRecord) {
   saveRecord(rec)
 }
 
+async function deleteRecord(rec: CostumeRecord) {
+  if (
+    !(await confirm({
+      title: `Delete ${studentName(rec.studentId)}’s costume record?`,
+      confirmText: 'Delete',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = records.value
+  records.value = records.value.filter((r) => r.id !== rec.id)
+  try {
+    await api.delete(`/costumerecords/${rec.id}`)
+    toast.success('Record deleted')
+  } catch {
+    records.value = prev
+  }
+}
+
 onMounted(load)
 watch(() => studioStore.selectedStudioId, () => {
   classFilter.value = null
@@ -366,13 +386,22 @@ function money(n: number): string {
               </select>
             </td>
             <td class="px-3 py-1.5">
-              <input
-                v-model="rec.alterationNotes"
-                type="text"
-                placeholder="—"
-                class="w-full min-w-[8rem] rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-border focus:border-border focus:outline-none"
-                @change="saveRecord(rec)"
-              />
+              <div class="flex items-center gap-1">
+                <input
+                  v-model="rec.alterationNotes"
+                  type="text"
+                  placeholder="—"
+                  class="w-full min-w-[8rem] rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-border focus:border-border focus:outline-none"
+                  @change="saveRecord(rec)"
+                />
+                <button
+                  class="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  aria-label="Delete costume record"
+                  @click="deleteRecord(rec)"
+                >
+                  <Trash2 class="h-3.5 w-3.5" />
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
