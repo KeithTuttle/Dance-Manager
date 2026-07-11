@@ -157,6 +157,24 @@ public class DevSeeder : IHostedService
             new RecitalParticipation { StudentId = b5.Id, ClassId = classB2.Id, IsParticipating = true }
         );
 
+        // --- Enrollments (the class rosters). Distinct per class. ---
+        db.Enrollments.AddRange(
+            new Enrollment { StudentId = a1.Id, ClassId = classA1.Id },
+            new Enrollment { StudentId = a2.Id, ClassId = classA1.Id },
+            new Enrollment { StudentId = a3.Id, ClassId = classA1.Id },
+            new Enrollment { StudentId = a4.Id, ClassId = classA2.Id },
+            new Enrollment { StudentId = a5.Id, ClassId = classA2.Id },
+            new Enrollment { StudentId = a6.Id, ClassId = classA3.Id },
+            // Ava also takes Saturday tap.
+            new Enrollment { StudentId = a1.Id, ClassId = classA3.Id },
+            new Enrollment { StudentId = b1.Id, ClassId = classB1.Id },
+            new Enrollment { StudentId = b2.Id, ClassId = classB1.Id },
+            new Enrollment { StudentId = b3.Id, ClassId = classB1.Id },
+            new Enrollment { StudentId = b6.Id, ClassId = classB1.Id },
+            new Enrollment { StudentId = b4.Id, ClassId = classB2.Id },
+            new Enrollment { StudentId = b5.Id, ClassId = classB2.Id }
+        );
+
         await db.SaveChangesAsync(ct);
     }
 }

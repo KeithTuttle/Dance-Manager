@@ -87,13 +87,14 @@ async function fetchClasses() {
 }
 
 async function fetchStudents() {
-  if (studioStore.selectedStudioId === null) {
+  // The roster is per class now: only students enrolled in the selected class.
+  if (selectedClassId.value === null) {
     students.value = []
     return
   }
   try {
     const { data } = await api.get<Student[]>('/students', {
-      params: { studioId: studioStore.selectedStudioId },
+      params: { classId: selectedClassId.value },
     })
     students.value = data
   } catch {
@@ -224,7 +225,8 @@ onMounted(async () => {
   if (studioStore.studios.length === 0) {
     await studioStore.fetchStudios().catch(() => {})
   }
-  await Promise.all([fetchClasses(), fetchStudents()])
+  // fetchClasses sets selectedClassId, whose watcher loads that class's roster.
+  await fetchClasses()
   await reloadForSelection()
 })
 
@@ -232,12 +234,18 @@ watch(
   () => studioStore.selectedStudioId,
   async () => {
     selectedClassId.value = null
-    await Promise.all([fetchClasses(), fetchStudents()])
+    await fetchClasses()
+    // fetchClasses may set selectedClassId, which triggers the watcher below to
+    // load that class's roster; the watcher also covers the no-classes case.
     await reloadForSelection()
   },
 )
 
-watch(selectedClassId, reloadForSelection)
+// Roster is per class: (re)load the enrolled students whenever the class changes.
+watch(selectedClassId, async () => {
+  await fetchStudents()
+  await reloadForSelection()
+})
 watch(selectedDate, async () => {
   dirty.value = false
   await fetchAttendance()

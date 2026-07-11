@@ -92,6 +92,11 @@ export interface RecitalParticipation {
   isParticipating: boolean
 }
 
+export interface Enrollment {
+  studentId: number
+  classId: number
+}
+
 export interface ShowProgram {
   id: number
   routineId: number

@@ -13,12 +13,17 @@ public class StudentsController : ControllerBase
 
     public StudentsController(AppDbContext db) => _db = db;
 
+    // GET /api/students?studioId=  -> all students in a studio
+    // GET /api/students?classId=   -> only students enrolled in that class (the class roster)
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Student>>> GetAll([FromQuery] int? studioId)
+    public async Task<ActionResult<IEnumerable<Student>>> GetAll(
+        [FromQuery] int? studioId, [FromQuery] int? classId)
     {
         var query = _db.Students.AsQueryable();
         if (studioId is not null)
             query = query.Where(s => s.StudioId == studioId);
+        if (classId is not null)
+            query = query.Where(s => _db.Enrollments.Any(e => e.StudentId == s.Id && e.ClassId == classId));
         return await query.OrderBy(s => s.LastName).ThenBy(s => s.FirstName).ToListAsync();
     }
 

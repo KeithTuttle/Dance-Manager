@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<Routine> Routines => Set<Routine>();
     public DbSet<Formation> Formations => Set<Formation>();
     public DbSet<RecitalParticipation> RecitalParticipations => Set<RecitalParticipation>();
+    public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<ShowProgram> ShowPrograms => Set<ShowProgram>();
     public DbSet<CostumeRecord> CostumeRecords => Set<CostumeRecord>();
     public DbSet<SongChoice> SongChoices => Set<SongChoice>();
@@ -62,8 +63,9 @@ public class AppDbContext : DbContext
         b.Entity<Audition>().Property(x => x.SkillColumns).HasColumnType("jsonb");
         b.Entity<AuditionCandidate>().Property(x => x.Scores).HasColumnType("jsonb");
 
-        // Composite key.
+        // Composite keys.
         b.Entity<RecitalParticipation>().HasKey(x => new { x.StudentId, x.ClassId });
+        b.Entity<Enrollment>().HasKey(x => new { x.StudentId, x.ClassId });
 
         // One Clerk user maps to exactly one membership.
         b.Entity<Membership>().HasIndex(x => x.ClerkUserId).IsUnique();
