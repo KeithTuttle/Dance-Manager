@@ -20,6 +20,13 @@ var builder = WebApplication.CreateBuilder(args);
 // is used instead.
 builder.Configuration.AddUserSecrets("f98fb171-b667-400e-968f-b9058a318e6e");
 
+// Belt-and-braces: user-secrets live under %APPDATA%, and at least one launcher
+// (VS Code's task runner) spawns `dotnet run` with an environment where that
+// path doesn't resolve, so the secret silently fails to load. This gitignored
+// file sits next to the app, so it loads no matter who spawned the process.
+// It intentionally comes AFTER AddUserSecrets so it wins when both exist.
+builder.Configuration.AddJsonFile("appsettings.Development.local.json", optional: true, reloadOnChange: false);
+
 const string CorsPolicy = "spa";
 
 builder.Services.AddDbContext<AppDbContext>(options =>

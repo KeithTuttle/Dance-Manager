@@ -144,25 +144,29 @@ async function loadMatrix() {
   loading.value = false
 }
 
-// --- Recital participation toggle (scoped to the selected class) ---
+// --- Recital participation (per student, scoped to the selected class) ---
+const selectedClassName = computed(
+  () => classes.value.find((c) => c.id === selectedClassId.value)?.name ?? '',
+)
+
 function isParticipating(studentId: number): boolean {
   return participation.value.some((p) => p.studentId === studentId && p.isParticipating)
 }
 
-async function toggleParticipation(studentId: number) {
+async function setParticipation(studentId: number, value: boolean) {
   const classId = selectedClassId.value
   if (!classId) return
-  const next = !isParticipating(studentId)
+  if (isParticipating(studentId) === value) return // no change
   const idx = participation.value.findIndex(
     (p) => p.studentId === studentId && p.classId === classId,
   )
   const prev = idx >= 0 ? participation.value[idx].isParticipating : null
   // Optimistic update.
-  if (idx >= 0) participation.value[idx] = { studentId, classId, isParticipating: next }
-  else participation.value.push({ studentId, classId, isParticipating: next })
+  if (idx >= 0) participation.value[idx] = { studentId, classId, isParticipating: value }
+  else participation.value.push({ studentId, classId, isParticipating: value })
 
   try {
-    await api.put('/recitalparticipation', { studentId, classId, isParticipating: next })
+    await api.put('/recitalparticipation', { studentId, classId, isParticipating: value })
   } catch {
     // Roll back on failure (api.ts already surfaces the error toast).
     if (idx >= 0 && prev !== null) participation.value[idx] = { studentId, classId, isParticipating: prev }
@@ -306,6 +310,32 @@ async function addStudent() {
     /* api.ts already surfaces the error toast; draft stays local */
   }
   await openStudent(draft)
+}
+
+async function deleteStudent() {
+  const student = detailStudent.value
+  if (!student) return
+  if (
+    !(await confirm({
+      title: `Remove ${studentName(student)}?`,
+      message:
+        'Students belong to the whole studio, so this removes them from every class ' +
+        '(and their notes, attendance, participation, and progress). This can’t be undone.',
+      confirmText: 'Remove student',
+      destructive: true,
+    }))
+  )
+    return
+  const prev = students.value
+  students.value = students.value.filter((s) => s.id !== student.id)
+  detailOpen.value = false
+  if (student.id < 0) return // never persisted
+  try {
+    await api.delete(`/students/${student.id}`)
+    toast.success('Student removed')
+  } catch {
+    students.value = prev // restore on failure
+  }
 }
 
 async function saveStudentInfo() {
@@ -507,8 +537,11 @@ watch(selectedClassId, async () => {
               >
                 No milestones defined
               </th>
-              <th class="min-w-[110px] whitespace-nowrap px-3 py-3 text-left font-medium">
-                Participating
+              <th class="min-w-[150px] whitespace-nowrap px-3 py-3 text-left font-medium">
+                <div>In recital?</div>
+                <div class="text-xs font-normal text-muted-foreground">
+                  {{ selectedClassName || 'this class' }}
+                </div>
               </th>
             </tr>
           </thead>
@@ -589,18 +622,32 @@ watch(selectedClassId, async () => {
               </td>
               <td v-if="milestones.length === 0" class="px-3 py-2.5 text-muted-foreground">—</td>
               <td class="px-3 py-2.5">
-                <button
-                  type="button"
-                  class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-                  :class="
-                    isParticipating(s.id)
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                      : 'bg-muted text-muted-foreground'
-                  "
-                  @click="toggleParticipation(s.id)"
-                >
-                  {{ isParticipating(s.id) ? 'Yes' : 'No' }}
-                </button>
+                <div class="inline-flex overflow-hidden rounded-md border border-border">
+                  <button
+                    type="button"
+                    class="px-3 py-1 text-xs font-medium transition-colors"
+                    :class="
+                      isParticipating(s.id)
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-muted-foreground hover:bg-accent'
+                    "
+                    @click="setParticipation(s.id, true)"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    class="border-l border-border px-3 py-1 text-xs font-medium transition-colors"
+                    :class="
+                      !isParticipating(s.id)
+                        ? 'bg-muted-foreground/80 text-background'
+                        : 'text-muted-foreground hover:bg-accent'
+                    "
+                    @click="setParticipation(s.id, false)"
+                  >
+                    No
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -609,7 +656,9 @@ watch(selectedClassId, async () => {
 
       <!-- Participation tally -->
       <div class="mt-4 flex items-center gap-2 text-sm">
-        <span class="font-medium">Recital participation:</span>
+        <span class="font-medium">
+          In {{ selectedClassName || 'this class' }}’s recital:
+        </span>
         <span class="text-emerald-700">{{ participationTally.yes }} Yes</span>
         <span class="text-muted-foreground">·</span>
         <span class="text-muted-foreground">{{ participationTally.no }} No</span>
@@ -802,6 +851,17 @@ watch(selectedClassId, async () => {
                 </li>
               </ul>
             </section>
+          </div>
+
+          <!-- Footer: remove student -->
+          <div v-if="detailStudent" class="border-t border-border px-5 py-3">
+            <button
+              class="inline-flex items-center gap-2 rounded-md border border-destructive/40 px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10"
+              @click="deleteStudent"
+            >
+              <Trash2 class="h-4 w-4" />
+              Remove student
+            </button>
           </div>
         </DialogContent>
       </DialogPortal>
