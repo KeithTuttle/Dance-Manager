@@ -105,13 +105,42 @@ public class AppDbContext : DbContext
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         StampTenant();
+        ResetStoreGeneratedKeys();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         StampTenant();
+        ResetStoreGeneratedKeys();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Clears any client-supplied value on a store-generated (identity) primary key
+    /// before insert, so the database always assigns the id. Controllers bind whole
+    /// entities from request bodies, and the client sends a temporary negative id for
+    /// optimistic UI rows; without this, Postgres' <c>IDENTITY BY DEFAULT</c> honors
+    /// that value — inserting a negative PK, then failing later inserts with a
+    /// duplicate-key (23505) violation. Composite-key join rows (Enrollment,
+    /// RecitalParticipation) have no store-generated key and are left untouched.
+    /// </summary>
+    private void ResetStoreGeneratedKeys()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State != EntityState.Added) continue;
+            var key = entry.Metadata.FindPrimaryKey();
+            if (key is null) continue;
+            foreach (var prop in key.Properties)
+            {
+                if (prop.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd
+                    && (prop.ClrType == typeof(int) || prop.ClrType == typeof(long)))
+                {
+                    entry.Property(prop.Name).CurrentValue = Activator.CreateInstance(prop.ClrType);
+                }
+            }
+        }
     }
 
     /// <summary>Stamp the current tenant onto new tenant-scoped rows on insert.</summary>
