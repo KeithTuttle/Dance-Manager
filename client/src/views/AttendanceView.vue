@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogClose,
 } from 'reka-ui'
-import { CalendarCheck, NotebookPen, X, AlertTriangle, Save, Loader2 } from 'lucide-vue-next'
+import { CalendarCheck, NotebookPen, X, AlertTriangle, Save, Loader2, History } from 'lucide-vue-next'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
@@ -36,6 +36,8 @@ const selectedDate = ref<string>(todayIso())
 
 // Local editable attendance state: studentId -> status.
 const marks = ref<Record<number, AttendanceStatus>>({})
+// Per-student reason note (used for excused absences): studentId -> text.
+const notesFor = ref<Record<number, string>>({})
 // Summary rate per student (0..1); missing = no data.
 const rates = ref<Record<number, number>>({})
 
@@ -104,16 +106,23 @@ async function fetchStudents() {
 
 async function fetchAttendance() {
   marks.value = {}
+  notesFor.value = {}
   if (selectedClassId.value === null || !selectedDate.value) return
   try {
     const { data } = await api.get<AttendanceRecord[]>('/attendance', {
       params: { classId: selectedClassId.value, date: selectedDate.value },
     })
     const next: Record<number, AttendanceStatus> = {}
-    for (const r of data) next[r.studentId] = r.status
+    const nextNotes: Record<number, string> = {}
+    for (const r of data) {
+      next[r.studentId] = r.status
+      if (r.note) nextNotes[r.studentId] = r.note
+    }
     marks.value = next
+    notesFor.value = nextNotes
   } catch {
     marks.value = {}
+    notesFor.value = {}
   }
 }
 
@@ -142,6 +151,11 @@ function setStatus(studentId: number, status: AttendanceStatus) {
   dirty.value = true
 }
 
+function setNote(studentId: number, note: string) {
+  notesFor.value = { ...notesFor.value, [studentId]: note }
+  dirty.value = true
+}
+
 async function save() {
   if (selectedClassId.value === null || !selectedDate.value) return
   const payload: AttendanceUpsert[] = Object.entries(marks.value).map(
@@ -150,6 +164,8 @@ async function save() {
       classId: selectedClassId.value as number,
       date: selectedDate.value,
       status,
+      // Only carry a note for excused absences; clear it otherwise.
+      note: status === 'Excused' ? notesFor.value[Number(studentId)] || null : null,
     }),
   )
   if (payload.length === 0) return
@@ -219,6 +235,72 @@ async function saveNotes() {
   } finally {
     savingNotes.value = false
   }
+}
+
+// --- Attendance history (view a span of dates, e.g. private lessons) ---
+const historyOpen = ref(false)
+const historyFrom = ref('')
+const historyTo = ref('')
+const historyRecords = ref<AttendanceRecord[]>([])
+const historyLoading = ref(false)
+
+function isoDaysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+// Distinct session dates in range that actually have records, most recent first.
+const historyDates = computed(() => {
+  const set = new Set(historyRecords.value.map((r) => r.date))
+  return Array.from(set).sort().reverse()
+})
+
+// studentId -> (date -> record) for quick cell lookup.
+const historyByStudent = computed(() => {
+  const map: Record<number, Record<string, AttendanceRecord>> = {}
+  for (const r of historyRecords.value) {
+    ;(map[r.studentId] ??= {})[r.date] = r
+  }
+  return map
+})
+
+// "Times seen" for a student = number of Present days in range.
+function seenCount(studentId: number): number {
+  return historyRecords.value.filter((r) => r.studentId === studentId && r.status === 'Present')
+    .length
+}
+
+function cellFor(studentId: number, date: string): AttendanceRecord | undefined {
+  return historyByStudent.value[studentId]?.[date]
+}
+
+function statusAbbrev(status: AttendanceStatus): string {
+  return status === 'Present' ? 'P' : status === 'Absent' ? 'A' : 'E'
+}
+
+async function loadHistory() {
+  if (selectedClassId.value === null) return
+  historyLoading.value = true
+  try {
+    const { data } = await api.get<AttendanceRecord[]>('/attendance/history', {
+      params: { classId: selectedClassId.value, from: historyFrom.value, to: historyTo.value },
+    })
+    historyRecords.value = data ?? []
+  } catch {
+    historyRecords.value = []
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function openHistory() {
+  if (!historyFrom.value) historyFrom.value = isoDaysAgo(30)
+  if (!historyTo.value) historyTo.value = todayIso()
+  historyOpen.value = true
+  loadHistory()
 }
 
 onMounted(async () => {
@@ -294,6 +376,14 @@ watch(selectedDate, async () => {
         <button
           class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
           :disabled="selectedClassId === null"
+          @click="openHistory"
+        >
+          <History class="h-4 w-4" />
+          History
+        </button>
+        <button
+          class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          :disabled="selectedClassId === null"
           @click="openNotes"
         >
           <NotebookPen class="h-4 w-4" />
@@ -329,49 +419,56 @@ watch(selectedDate, async () => {
       </div>
 
       <ul v-else class="divide-y divide-border">
-        <li
-          v-for="s in students"
-          :key="s.id"
-          class="flex items-center justify-between gap-4 px-4 py-3"
-        >
-          <div class="flex min-w-0 items-center gap-2">
-            <span class="truncate text-sm font-medium">{{ studentName(s) }}</span>
-            <span
-              v-if="isLowAttendance(s.id)"
-              class="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-              :title="`${ratePercent(s.id)}% attendance over the last 4 weeks`"
+        <li v-for="s in students" :key="s.id" class="px-4 py-3">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="truncate text-sm font-medium">{{ studentName(s) }}</span>
+              <span
+                v-if="isLowAttendance(s.id)"
+                class="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                :title="`${ratePercent(s.id)}% attendance over the last 4 weeks`"
+              >
+                <AlertTriangle class="h-3 w-3" />
+                {{ ratePercent(s.id) }}%
+              </span>
+            </div>
+
+            <!-- 3-state segmented toggle -->
+            <div
+              class="inline-flex shrink-0 overflow-hidden rounded-md border border-border"
+              role="group"
+              :aria-label="`Attendance for ${studentName(s)}`"
             >
-              <AlertTriangle class="h-3 w-3" />
-              {{ ratePercent(s.id) }}%
-            </span>
+              <button
+                v-for="status in STATUSES"
+                :key="status"
+                type="button"
+                class="h-8 border-l border-border px-3 text-xs font-medium transition-colors first:border-l-0"
+                :class="
+                  marks[s.id] === status
+                    ? status === 'Present'
+                      ? 'bg-emerald-500 text-white'
+                      : status === 'Absent'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-amber-500 text-white'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                "
+                :aria-pressed="marks[s.id] === status"
+                @click="setStatus(s.id, status)"
+              >
+                {{ status }}
+              </button>
+            </div>
           </div>
 
-          <!-- 3-state segmented toggle -->
-          <div
-            class="inline-flex shrink-0 overflow-hidden rounded-md border border-border"
-            role="group"
-            :aria-label="`Attendance for ${studentName(s)}`"
-          >
-            <button
-              v-for="status in STATUSES"
-              :key="status"
-              type="button"
-              class="h-8 border-l border-border px-3 text-xs font-medium transition-colors first:border-l-0"
-              :class="
-                marks[s.id] === status
-                  ? status === 'Present'
-                    ? 'bg-emerald-500 text-white'
-                    : status === 'Absent'
-                      ? 'bg-red-500 text-white'
-                      : 'bg-amber-500 text-white'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              "
-              :aria-pressed="marks[s.id] === status"
-              @click="setStatus(s.id, status)"
-            >
-              {{ status }}
-            </button>
-          </div>
+          <!-- Excused reason (only when marked Excused) -->
+          <input
+            v-if="marks[s.id] === 'Excused'"
+            :value="notesFor[s.id] ?? ''"
+            placeholder="Reason for excused absence (optional)"
+            class="mt-2 w-full rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+            @input="setNote(s.id, ($event.target as HTMLInputElement).value)"
+          />
         </li>
       </ul>
     </div>
@@ -453,6 +550,111 @@ watch(selectedDate, async () => {
               <Save v-else class="h-4 w-4" />
               {{ savingNotes ? 'Saving…' : 'Save Notes' }}
             </button>
+          </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
+
+    <!-- Attendance History drawer -->
+    <DialogRoot v-model:open="historyOpen">
+      <DialogPortal>
+        <DialogOverlay
+          class="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in"
+        />
+        <DialogContent
+          class="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col border-l border-border bg-background shadow-xl focus:outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-right"
+        >
+          <div class="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <DialogTitle class="text-sm font-semibold tracking-tight">Attendance History</DialogTitle>
+              <DialogDescription class="mt-0.5 text-xs text-muted-foreground">
+                {{ selectedClass?.name ?? 'Class' }} · “Seen” counts Present days in range
+              </DialogDescription>
+            </div>
+            <DialogClose
+              class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              aria-label="Close"
+            >
+              <X class="h-4 w-4" />
+            </DialogClose>
+          </div>
+
+          <div class="flex flex-wrap items-end gap-3 border-b border-border px-5 py-3">
+            <label class="flex flex-col gap-1">
+              <span class="text-xs font-medium text-muted-foreground">From</span>
+              <input
+                v-model="historyFrom"
+                type="date"
+                class="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                @change="loadHistory"
+              />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-xs font-medium text-muted-foreground">To</span>
+              <input
+                v-model="historyTo"
+                type="date"
+                class="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                @change="loadHistory"
+              />
+            </label>
+            <span v-if="historyLoading" class="mb-1.5 text-xs text-muted-foreground">Loading…</span>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-auto p-5">
+            <p
+              v-if="historyDates.length === 0"
+              class="py-10 text-center text-sm text-muted-foreground"
+            >
+              No attendance recorded in this range.
+            </p>
+            <table v-else class="w-full border-collapse text-sm">
+              <thead>
+                <tr class="border-b border-border">
+                  <th class="sticky left-0 z-10 bg-background px-3 py-2 text-left font-medium">
+                    Student
+                  </th>
+                  <th class="px-3 py-2 text-center font-medium">Seen</th>
+                  <th
+                    v-for="d in historyDates"
+                    :key="d"
+                    class="whitespace-nowrap px-2 py-2 text-center text-xs font-medium text-muted-foreground"
+                  >
+                    {{ formatSessionDate(d) }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in students" :key="s.id" class="border-b border-border last:border-0">
+                  <td class="sticky left-0 z-10 bg-background px-3 py-2 font-medium">
+                    {{ studentName(s) }}
+                  </td>
+                  <td class="px-3 py-2 text-center tabular-nums font-semibold">
+                    {{ seenCount(s.id) }}
+                  </td>
+                  <td v-for="d in historyDates" :key="d" class="px-2 py-2 text-center">
+                    <span
+                      v-if="cellFor(s.id, d)"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      :class="
+                        cellFor(s.id, d)!.status === 'Present'
+                          ? 'bg-emerald-500'
+                          : cellFor(s.id, d)!.status === 'Absent'
+                            ? 'bg-red-500'
+                            : 'bg-amber-500'
+                      "
+                      :title="
+                        cellFor(s.id, d)!.status +
+                        (cellFor(s.id, d)!.note ? ` — ${cellFor(s.id, d)!.note}` : '')
+                      "
+                    >
+                      {{ statusAbbrev(cellFor(s.id, d)!.status) }}
+                    </span>
+                    <span v-else class="text-muted-foreground/40">·</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </DialogContent>
       </DialogPortal>

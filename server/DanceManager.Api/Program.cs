@@ -37,6 +37,8 @@ builder.Services.AddScoped<ICurrentTenant, CurrentTenant>();
 
 // PDF generation for the Sub Handoff feature (Unit 6).
 builder.Services.AddScoped<SubHandoffPdfService>();
+// PDF generation for the printable costume sheet.
+builder.Services.AddScoped<CostumePdfService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

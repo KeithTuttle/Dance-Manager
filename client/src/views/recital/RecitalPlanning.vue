@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Music, Plus, Trash2, ExternalLink, Users, Map as MapIcon } from 'lucide-vue-next'
+import { Music, Plus, Trash2, ExternalLink, Users, Map as MapIcon, FileDown } from 'lucide-vue-next'
 import { api } from '@/lib/api'
 import { confirm } from '@/lib/confirm'
+import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
 import type {
   Routine,
@@ -148,6 +149,8 @@ async function addCostumeOption(gender: Gender) {
     routineId: selectedRoutineId.value,
     gender,
     description: '',
+    accessories: '',
+    shoes: '',
     photoLink: null,
     optionLink: null,
   }
@@ -178,6 +181,29 @@ async function deleteCostumeOption(option: CostumeOption) {
     await api.delete(`/costumeoptions/${option.id}`)
   } catch {
     /* local only */
+  }
+}
+
+// Download a printable costume sheet (PDF) for the selected routine.
+async function downloadCostumeSheet() {
+  const routineId = selectedRoutineId.value
+  if (routineId === null) return
+  try {
+    const res = await api.get('/costumeoptions/pdf', {
+      params: { routineId },
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'costume-sheet.pdf'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    toast.error('Couldn’t generate the costume sheet.')
   }
 }
 
@@ -301,6 +327,15 @@ watch(selectedRoutineId, loadForRoutine)
       </div>
 
       <!-- Costume Options -->
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold tracking-tight">Costumes</h3>
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+          @click="downloadCostumeSheet"
+        >
+          <FileDown class="h-3.5 w-3.5" /> Print costume sheet (PDF)
+        </button>
+      </div>
       <div class="grid gap-4 lg:grid-cols-2">
         <div v-for="group in (['Boys', 'Girls'] as Gender[])" :key="group" class="rounded-lg border border-border">
           <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
@@ -341,6 +376,20 @@ watch(selectedRoutineId, loadForRoutine)
                   class="w-full rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   @change="saveCostumeOption(opt)"
                 />
+                <div class="flex gap-2">
+                  <input
+                    v-model="opt.accessories"
+                    placeholder="Accessories"
+                    class="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveCostumeOption(opt)"
+                  />
+                  <input
+                    v-model="opt.shoes"
+                    placeholder="Shoes"
+                    class="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    @change="saveCostumeOption(opt)"
+                  />
+                </div>
                 <input
                   v-model="opt.photoLink"
                   placeholder="Photo link (https://…)"

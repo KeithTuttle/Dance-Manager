@@ -18,4 +18,5 @@ export interface AttendanceUpsert {
   classId: number
   date: string
   status: AttendanceStatus
+  note?: string | null
 }

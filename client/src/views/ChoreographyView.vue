@@ -722,6 +722,7 @@ async function generateHandoff() {
                 :class="{ 'cursor-grabbing': draggingId === n.student.id }"
                 @pointerdown="onPointerDown(n.student.id, $event)"
               >
+                <title>{{ `${n.student.firstName} ${n.student.lastName}`.trim() }}</title>
                 <circle
                   :cx="GX0 + (n.x / 100) * GW"
                   :cy="GY0 + (n.y / 100) * GH"

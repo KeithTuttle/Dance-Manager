@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace DanceManager.Api.Controllers;
 
 /// <summary>Payload for a single attendance mark in a bulk upsert.</summary>
-public record AttendanceUpsertDto(int StudentId, int ClassId, DateOnly Date, AttendanceStatus Status);
+public record AttendanceUpsertDto(int StudentId, int ClassId, DateOnly Date, AttendanceStatus Status, string? Note);
 
 /// <summary>
 /// Rolling 4-week (last 28 days) attendance summary per student for a class.
@@ -57,6 +57,7 @@ public class AttendanceController : ControllerBase
             if (lookup.TryGetValue((r.StudentId, r.ClassId, r.Date), out var found))
             {
                 found.Status = r.Status;
+                found.Note = r.Note;
             }
             else
             {
@@ -66,6 +67,7 @@ public class AttendanceController : ControllerBase
                     ClassId = r.ClassId,
                     Date = r.Date,
                     Status = r.Status,
+                    Note = r.Note,
                 });
             }
         }
@@ -95,5 +97,24 @@ public class AttendanceController : ControllerBase
             .ToListAsync();
 
         return rows;
+    }
+
+    // GET /api/attendance/history?classId=&from=&to=
+    // All attendance records for a class within an (inclusive) date range —
+    // used to view attendance over a span, e.g. how often a private-lesson
+    // student has been seen. Defaults to the last ~90 days when unbounded.
+    [HttpGet("history")]
+    public async Task<ActionResult<IEnumerable<AttendanceRecord>>> History(
+        [FromQuery] int classId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to)
+    {
+        var start = from ?? DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-90));
+        var end = to ?? DateOnly.FromDateTime(DateTime.UtcNow.Date);
+
+        return await _db.AttendanceRecords
+            .Where(a => a.ClassId == classId && a.Date >= start && a.Date <= end)
+            .OrderBy(a => a.Date)
+            .ToListAsync();
     }
 }
