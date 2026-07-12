@@ -2,15 +2,21 @@ import axios from 'axios'
 import { toast } from '@/lib/toast'
 
 /**
- * Shared axios instance. Requests go to `/api/*` and are proxied to the
- * .NET backend by Vite in dev (see vite.config.ts).
+ * Shared axios instance. In dev, requests go to `/api/*` and are proxied to the
+ * .NET backend by Vite (see vite.config.ts). In production (e.g. Vercel) there
+ * is no proxy, so `VITE_API_URL` must point at the deployed API's origin
+ * (e.g. https://dancemanager-api.onrender.com) — requests then go to
+ * `${VITE_API_URL}/api/*`. Falls back to the relative `/api` dev behavior when
+ * unset.
  *
  * When Clerk is configured, a request interceptor attaches the current session
  * token as a Bearer credential so the API can authenticate the caller and scope
  * data to their tenant. On a 401 we bounce to Clerk's sign-in.
  */
+const apiOrigin = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') ?? ''
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${apiOrigin}/api`,
   headers: { 'Content-Type': 'application/json' },
 })
 

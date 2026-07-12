@@ -108,11 +108,24 @@ else
     builder.Services.AddAuthorization();
 }
 
+// Allowed SPA origins: config key "Cors:AllowedOrigins" (env var Cors__AllowedOrigins),
+// a comma-separated list, e.g. "https://dancemanager.vercel.app,https://dancemanager-git-preview.vercel.app".
+// Always includes the local Vite dev origin so local dev keeps working unmodified.
+var configuredOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var allowedOrigins = configuredOrigins.Append("http://localhost:5199").Distinct().ToArray();
+
 builder.Services.AddCors(options =>
     options.AddPolicy(CorsPolicy, policy => policy
-        .WithOrigins("http://localhost:5199")
+        .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()));
+
+// Render (and similar PaaS hosts) assign the listen port via the PORT env var
+// at runtime rather than a fixed one; Kestrel must bind to it explicitly.
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(port))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 var app = builder.Build();
 
@@ -139,6 +152,8 @@ else
     app.Logger.LogInformation(
         "Environment: {Env}; Database host: {DbHost}", app.Environment.EnvironmentName, dbHost);
 }
+
+app.Logger.LogInformation("CORS allowed origins: {Origins}", string.Join(", ", allowedOrigins));
 
 if (!authEnabled)
 {
