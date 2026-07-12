@@ -1,5 +1,6 @@
 using DanceManager.Api.Data;
 using DanceManager.Api.Models;
+using DanceManager.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,8 +11,13 @@ namespace DanceManager.Api.Controllers;
 public class CostumeOptionsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly CostumePdfService _pdf;
 
-    public CostumeOptionsController(AppDbContext db) => _db = db;
+    public CostumeOptionsController(AppDbContext db, CostumePdfService pdf)
+    {
+        _db = db;
+        _pdf = pdf;
+    }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CostumeOption>>> GetAll([FromQuery] int? routineId)
@@ -27,6 +33,40 @@ public class CostumeOptionsController : ControllerBase
     {
         var option = await _db.FindScopedAsync<CostumeOption>(id);
         return option is null ? NotFound() : option;
+    }
+
+    // GET /api/costumeoptions/pdf?routineId= — printable costume sheet for a routine.
+    [HttpGet("pdf")]
+    public async Task<IActionResult> Pdf([FromQuery] int routineId)
+    {
+        var routine = await _db.Routines.FirstOrDefaultAsync(r => r.Id == routineId);
+        if (routine is null) return NotFound("Routine not found.");
+
+        var danceClass = await _db.Classes.FirstOrDefaultAsync(c => c.Id == routine.ClassId);
+        var studioName = danceClass is null ? string.Empty : await _db.Studios
+            .Where(s => s.Id == danceClass.StudioId)
+            .Select(s => s.Name)
+            .FirstOrDefaultAsync() ?? string.Empty;
+
+        var options = await _db.CostumeOptions
+            .Where(o => o.RoutineId == routineId)
+            .OrderBy(o => o.Id)
+            .ToListAsync();
+
+        var title = string.IsNullOrWhiteSpace(routine.Artist)
+            ? routine.SongTitle
+            : $"{routine.SongTitle} — {routine.Artist}";
+
+        var bytes = _pdf.Build(new CostumeSheetData
+        {
+            StudioName = studioName,
+            ClassName = danceClass?.Name ?? string.Empty,
+            RoutineTitle = title,
+            BoysOptions = options.Where(o => o.Gender == Gender.Boys).ToList(),
+            GirlsOptions = options.Where(o => o.Gender == Gender.Girls).ToList(),
+        });
+
+        return File(bytes, "application/pdf", "costume-sheet.pdf");
     }
 
     [HttpPost]

@@ -50,6 +50,7 @@ export interface AttendanceRecord {
   classId: number
   date: string
   status: AttendanceStatus
+  note?: string | null
 }
 
 export interface ClassSession {
@@ -126,6 +127,8 @@ export interface CostumeOption {
   routineId: number
   gender: Gender
   description?: string | null
+  accessories?: string | null
+  shoes?: string | null
   photoLink?: string | null
   optionLink?: string | null
 }
