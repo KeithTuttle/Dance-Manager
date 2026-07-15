@@ -13,12 +13,17 @@ public class RoutinesController : ControllerBase
 
     public RoutinesController(AppDbContext db) => _db = db;
 
+    // GET /api/routines?classId=  -> routines in one class
+    // GET /api/routines?studioId= -> routines across a studio (via the routine's class)
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Routine>>> GetAll([FromQuery] int? classId)
+    public async Task<ActionResult<IEnumerable<Routine>>> GetAll(
+        [FromQuery] int? classId, [FromQuery] int? studioId)
     {
         var query = _db.Routines.AsQueryable();
         if (classId is not null)
             query = query.Where(r => r.ClassId == classId);
+        if (studioId is not null)
+            query = query.Where(r => r.Class != null && r.Class.StudioId == studioId);
         return await query.OrderBy(r => r.SongTitle).ToListAsync();
     }
 
