@@ -791,6 +791,9 @@ async function generateHandoff() {
                   Suggest
                 </button>
               </div>
+              <p class="text-[11px] italic text-muted-foreground">
+                * AI-generated — results can vary. Review and drag dancers to adjust.
+              </p>
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <span class="text-xs text-muted-foreground">Quick layouts:</span>
