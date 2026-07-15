@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -21,22 +22,34 @@ public record FormationSuggestion(bool Configured, bool Ok, Dictionary<int, Form
 /// The API key lives server-side only. Gemini's output is always validated and
 /// repaired (every dancer placed, in-bounds, spaced apart) so a bad/garbled model
 /// response can never reach the client or break the formation.
+///
+/// Future-proofing: the model name is the only volatile bit of the Gemini API, so
+/// the configured model is tried first and, if Google reports it doesn't exist
+/// (404), the service discovers a current flash model via ListModels and caches
+/// it — self-healing if the default is ever renamed/retired.
 /// </summary>
 public class FormationAiService
 {
+    private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
     private readonly IHttpClientFactory _httpFactory;
+    private readonly ILogger<FormationAiService> _logger;
     private readonly string? _apiKey;
-    private readonly string _model;
+    private readonly string _configuredModel;
+
+    // Process-wide cache of a model confirmed to work, once discovered.
+    private static string? _resolvedModel;
+    private static readonly SemaphoreSlim _modelLock = new(1, 1);
 
     // Stage margins + minimum spacing, in the same 0–100 space as the app's grid.
     private const double Margin = 6;
     private const double MinGap = 11;
 
-    public FormationAiService(IHttpClientFactory httpFactory, IConfiguration config)
+    public FormationAiService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<FormationAiService> logger)
     {
         _httpFactory = httpFactory;
+        _logger = logger;
         _apiKey = config["Gemini:ApiKey"];
-        _model = string.IsNullOrWhiteSpace(config["Gemini:Model"]) ? "gemini-2.5-flash" : config["Gemini:Model"]!;
+        _configuredModel = string.IsNullOrWhiteSpace(config["Gemini:Model"]) ? "gemini-2.5-flash" : config["Gemini:Model"]!;
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
@@ -57,10 +70,12 @@ public class FormationAiService
             Repair(coords, dancers); // fill missing, clamp, space apart
             return new FormationSuggestion(true, true, coords);
         }
-        catch
+        catch (Exception ex)
         {
             // Timeout, network, bad key, safety block, unparseable output — all
-            // degrade to "not ok" so the client offers a template instead.
+            // degrade to "not ok" so the client offers a template instead. Logged
+            // so a future failure (e.g. a renamed model) is diagnosable.
+            _logger.LogWarning(ex, "Gemini formation suggestion failed");
             return new FormationSuggestion(true, false, new());
         }
     }
@@ -69,7 +84,7 @@ public class FormationAiService
         IReadOnlyList<FormationDancer> dancers, string? description, CancellationToken ct)
     {
         var prompt = BuildPrompt(dancers, description);
-        var body = new
+        var payload = JsonSerializer.Serialize(new
         {
             contents = new[] { new { parts = new[] { new { text = prompt } } } },
             generationConfig = new
@@ -91,31 +106,103 @@ public class FormationAiService
                     },
                 },
             },
-        };
+        });
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(8));
-
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{_model}:generateContent";
         var client = _httpFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+
+        var model = _resolvedModel ?? _configuredModel;
+        var resp = await GenerateAsync(client, model, payload, cts.Token);
+
+        // Model not found → discover a current one, cache it, retry once.
+        if (resp.StatusCode == HttpStatusCode.NotFound)
         {
-            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+            resp.Dispose();
+            var discovered = await ResolveWorkingModelAsync(client, cts.Token);
+            if (discovered is null)
+                throw new InvalidOperationException($"Gemini model '{model}' not found and no alternative could be discovered.");
+            _logger.LogInformation("Gemini model '{Old}' not found; using '{New}'.", model, discovered);
+            _resolvedModel = discovered;
+            resp = await GenerateAsync(client, discovered, payload, cts.Token);
+        }
+
+        using (resp)
+        {
+            resp.EnsureSuccessStatusCode();
+            using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
+            // candidates[0].content.parts[0].text holds the JSON array (responseMimeType=json).
+            return doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? throw new InvalidOperationException("empty Gemini text");
+        }
+    }
+
+    private async Task<HttpResponseMessage> GenerateAsync(
+        HttpClient client, string model, string payload, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/models/{model}:generateContent")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
         };
         request.Headers.TryAddWithoutValidation("x-goog-api-key", _apiKey);
+        return await client.SendAsync(request, ct);
+    }
 
-        using var resp = await client.SendAsync(request, cts.Token);
-        resp.EnsureSuccessStatusCode();
+    /// <summary>Ask Gemini which models exist and pick a current flash model that supports generateContent.</summary>
+    private async Task<string?> ResolveWorkingModelAsync(HttpClient client, CancellationToken ct)
+    {
+        await _modelLock.WaitAsync(ct);
+        try
+        {
+            if (_resolvedModel is not null) return _resolvedModel; // another request already resolved it
 
-        using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
-        // candidates[0].content.parts[0].text holds the JSON array (responseMimeType=json).
-        return doc.RootElement
-            .GetProperty("candidates")[0]
-            .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
-            .GetString() ?? throw new InvalidOperationException("empty Gemini text");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/models");
+            request.Headers.TryAddWithoutValidation("x-goog-api-key", _apiKey);
+            using var resp = await client.SendAsync(request, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (!doc.RootElement.TryGetProperty("models", out var models)) return null;
+
+            string? bestFlash = null;
+            string? anyGenerate = null;
+            foreach (var m in models.EnumerateArray())
+            {
+                // Only models that support text generation.
+                if (!m.TryGetProperty("supportedGenerationMethods", out var methods)) continue;
+                var supportsGenerate = methods.EnumerateArray()
+                    .Any(x => x.GetString() == "generateContent");
+                if (!supportsGenerate) continue;
+
+                var name = m.GetProperty("name").GetString() ?? "";
+                var id = name.StartsWith("models/") ? name["models/".Length..] : name;
+                anyGenerate ??= id;
+
+                // Prefer a plain "flash" model (fast + free tier), skipping niche variants.
+                if (id.Contains("flash", StringComparison.OrdinalIgnoreCase)
+                    && !id.Contains("vision", StringComparison.OrdinalIgnoreCase)
+                    && !id.Contains("thinking", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Keep the last (typically newest) matching flash id.
+                    bestFlash = id;
+                }
+            }
+            return bestFlash ?? anyGenerate;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            _modelLock.Release();
+        }
     }
 
     private static string BuildPrompt(IReadOnlyList<FormationDancer> dancers, string? description)
@@ -212,7 +299,7 @@ public class FormationAiService
                     var dist = Math.Sqrt(dx * dx + dy * dy);
                     if (dist >= MinGap) continue;
                     moved = true;
-                    if (dist < 0.001) { dx = ((a % 3) - 1); dy = ((b % 3) - 1); dist = Math.Max(0.001, Math.Sqrt(dx * dx + dy * dy)); }
+                    if (dist < 0.001) { dx = (a % 3) - 1; dy = (b % 3) - 1; dist = Math.Max(0.001, Math.Sqrt(dx * dx + dy * dy)); }
                     var push = (MinGap - dist) / 2 + 0.5;
                     var ux = dx / dist; var uy = dy / dist;
                     pts[a][0] += ux * push; pts[a][1] += uy * push;
