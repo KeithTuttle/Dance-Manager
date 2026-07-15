@@ -39,6 +39,14 @@ builder.Services.AddScoped<ICurrentTenant, CurrentTenant>();
 builder.Services.AddScoped<SubHandoffPdfService>();
 // PDF generation for the printable costume sheet.
 builder.Services.AddScoped<CostumePdfService>();
+// PDF generation for the recital show order.
+builder.Services.AddScoped<ShowOrderPdfService>();
+// Outbound fetching of external costume-photo URLs to embed in the costume PDF.
+// Redirects are disabled so a public URL can't 302 to an internal IP and slip
+// past ImageFetchService's host allow-check (redirect-based SSRF).
+builder.Services.AddHttpClient(ImageFetchService.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<ImageFetchService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

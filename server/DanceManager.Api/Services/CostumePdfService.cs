@@ -13,12 +13,15 @@ public class CostumeSheetData
     public string RoutineTitle { get; set; } = string.Empty;
     public List<CostumeOption> BoysOptions { get; set; } = new();
     public List<CostumeOption> GirlsOptions { get; set; } = new();
+    /// <summary>optionId → fetched, validated image bytes (embedded when present).</summary>
+    public Dictionary<int, byte[]> PhotoBytesByOptionId { get; set; } = new();
 }
 
 /// <summary>
 /// Builds a clean, printable costume sheet PDF (QuestPDF): Boys and Girls
-/// sections, each listing the costume description, accessories, shoes, and any
-/// photo / vendor links for a routine.
+/// sections, each listing the costume description, accessories, shoes, the
+/// embedded photo (when the photo link resolved to a real image), and any
+/// vendor link for a routine.
 /// </summary>
 public class CostumePdfService
 {
@@ -46,8 +49,8 @@ public class CostumePdfService
                 page.Content().PaddingVertical(10).Column(col =>
                 {
                     col.Spacing(14);
-                    col.Item().Element(c => ComposeGroup(c, "Boys", data.BoysOptions));
-                    col.Item().Element(c => ComposeGroup(c, "Girls", data.GirlsOptions));
+                    col.Item().Element(c => ComposeGroup(c, "Boys", data.BoysOptions, data.PhotoBytesByOptionId));
+                    col.Item().Element(c => ComposeGroup(c, "Girls", data.GirlsOptions, data.PhotoBytesByOptionId));
                 });
 
                 page.Footer().AlignRight().Text(x =>
@@ -61,7 +64,9 @@ public class CostumePdfService
         return document.GeneratePdf();
     }
 
-    private static void ComposeGroup(IContainer container, string title, List<CostumeOption> options)
+    private static void ComposeGroup(
+        IContainer container, string title, List<CostumeOption> options,
+        Dictionary<int, byte[]> photos)
     {
         container.Column(col =>
         {
@@ -75,15 +80,25 @@ public class CostumePdfService
 
             foreach (var opt in options)
             {
-                col.Item().PaddingTop(6).Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(card =>
+                var hasPhoto = photos.TryGetValue(opt.Id, out var photoBytes);
+                col.Item().PaddingTop(6).Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Row(row =>
                 {
-                    card.Spacing(3);
-                    if (!string.IsNullOrWhiteSpace(opt.Description))
-                        card.Item().Text(opt.Description).SemiBold();
-                    Field(card, "Accessories", opt.Accessories);
-                    Field(card, "Shoes", opt.Shoes);
-                    Field(card, "Photo", opt.PhotoLink);
-                    Field(card, "Vendor", opt.OptionLink);
+                    if (hasPhoto)
+                    {
+                        row.ConstantItem(90).AlignTop().Image(photoBytes!).FitWidth();
+                        row.ConstantItem(10);
+                    }
+                    row.RelativeItem().Column(card =>
+                    {
+                        card.Spacing(3);
+                        if (!string.IsNullOrWhiteSpace(opt.Description))
+                            card.Item().Text(opt.Description).SemiBold();
+                        Field(card, "Accessories", opt.Accessories);
+                        Field(card, "Shoes", opt.Shoes);
+                        // Only print the photo URL as text when we couldn't embed it.
+                        if (!hasPhoto) Field(card, "Photo", opt.PhotoLink);
+                        Field(card, "Vendor", opt.OptionLink);
+                    });
                 });
             }
         });
