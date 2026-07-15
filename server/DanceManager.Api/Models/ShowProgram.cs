@@ -24,6 +24,13 @@ public class ShowProgram : ITenantScoped
     /// <summary>Display name for a standalone/quick-add number (ignored when RoutineId is set).</summary>
     public string? Title { get; set; }
 
+    /// <summary>
+    /// JSON array of studentIds performing in a standalone/quick-add number, so the
+    /// teacher's dancers can be tracked for back-to-back changes. Ignored for
+    /// routine-linked numbers (their dancers come from class recital participation).
+    /// </summary>
+    public string? StudentIds { get; set; }
+
     /// <summary>Order within the running list (display sorts by section OrderIndex, then this).</summary>
     public int OrderPosition { get; set; }
 

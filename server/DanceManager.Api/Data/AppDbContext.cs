@@ -61,6 +61,7 @@ public class AppDbContext : DbContext
 
         // JSON columns (Postgres jsonb).
         b.Entity<Formation>().Property(x => x.StudentCoordinates).HasColumnType("jsonb");
+        b.Entity<ShowProgram>().Property(x => x.StudentIds).HasColumnType("jsonb");
         b.Entity<Audition>().Property(x => x.SkillColumns).HasColumnType("jsonb");
         b.Entity<AuditionCandidate>().Property(x => x.Scores).HasColumnType("jsonb");
 

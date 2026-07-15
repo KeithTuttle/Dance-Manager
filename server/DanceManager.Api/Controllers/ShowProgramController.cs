@@ -120,13 +120,13 @@ public class ShowProgramController : ControllerBase
             .OrderBy(s => s.OrderIndex).ThenBy(s => s.Id)
             .ToListAsync();
 
-        // Participating students per class (for the roster + back-to-back detection).
+        // Participating students per class (for routine-linked numbers) plus the full
+        // studio roster for name lookup (standalone numbers reference students by id).
         var participations = await _db.RecitalParticipations
             .Where(p => p.IsParticipating)
             .ToListAsync();
-        var participatingIds = participations.Select(p => p.StudentId).Distinct().ToList();
         var students = await _db.Students
-            .Where(s => participatingIds.Contains(s.Id))
+            .Where(s => s.StudioId == studioId)
             .ToListAsync();
 
         var data = new ShowOrderData

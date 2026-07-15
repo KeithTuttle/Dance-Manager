@@ -111,6 +111,8 @@ export interface ShowProgram {
   sectionId?: number | null
   studioId?: number | null
   title?: string | null
+  /** JSON string: number[] of studentIds attached to a standalone/quick-add number. */
+  studentIds?: string | null
   orderPosition: number
 }
 
