@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DanceManager.Api.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -123,11 +124,11 @@ public class ShowOrderPdfService
                 var entry = entries[i];
                 var number = startNumber + i + 1;
                 var routine = entry.Routine;
-                var classId = routine?.Class?.Id;
                 var title = routine is not null
                     ? (string.IsNullOrWhiteSpace(routine.SongTitle) ? "Untitled routine" : routine.SongTitle)
                     : (string.IsNullOrWhiteSpace(entry.Title) ? "Untitled number" : entry.Title!);
                 var className = routine?.Class?.Name;
+                var dancers = StudentSet(entry, participatingByClass);
 
                 col.Item().PaddingTop(i == 0 ? 0 : 4).Row(row =>
                 {
@@ -138,11 +139,11 @@ public class ShowOrderPdfService
                         if (!string.IsNullOrWhiteSpace(className))
                             info.Item().Text(className!).FontSize(9).FontColor(Colors.Grey.Medium);
 
-                        // Participating dancers for this number (routine-linked only).
-                        if (classId is not null
-                            && participatingByClass.TryGetValue(classId.Value, out var ids) && ids.Count > 0)
+                        // Dancers in this number: class participation (routine-linked)
+                        // or the students attached to a standalone number.
+                        if (dancers.Count > 0)
                         {
-                            var names = ids.Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
+                            var names = dancers.Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
                                 .OrderBy(n => n);
                             info.Item().PaddingTop(1).Text(string.Join(", ", names))
                                 .FontSize(8.5f).FontColor(Colors.Grey.Darken1);
@@ -172,14 +173,28 @@ public class ShowOrderPdfService
         Dictionary<int, HashSet<int>> participatingByClass,
         Dictionary<int, string> studentName)
     {
-        var classA = a.Routine?.Class?.Id;
-        var classB = b.Routine?.Class?.Id;
-        if (classA is null || classB is null) return new();
-        if (!participatingByClass.TryGetValue(classA.Value, out var setA)) return new();
-        if (!participatingByClass.TryGetValue(classB.Value, out var setB)) return new();
+        var setA = StudentSet(a, participatingByClass);
+        var setB = StudentSet(b, participatingByClass);
+        if (setA.Count == 0 || setB.Count == 0) return new();
         return setA.Where(setB.Contains)
             .Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
             .OrderBy(n => n)
             .ToList();
+    }
+
+    /// <summary>Dancers in a number: class recital participation (routine-linked) or the
+    /// students explicitly attached to a standalone/quick-add number.</summary>
+    private static HashSet<int> StudentSet(ShowProgram entry, Dictionary<int, HashSet<int>> participatingByClass)
+    {
+        if (entry.RoutineId is not null)
+        {
+            var classId = entry.Routine?.Class?.Id;
+            if (classId is not null && participatingByClass.TryGetValue(classId.Value, out var set))
+                return set;
+            return new HashSet<int>();
+        }
+        if (string.IsNullOrWhiteSpace(entry.StudentIds)) return new HashSet<int>();
+        try { return JsonSerializer.Deserialize<List<int>>(entry.StudentIds)?.ToHashSet() ?? new(); }
+        catch { return new HashSet<int>(); }
     }
 }

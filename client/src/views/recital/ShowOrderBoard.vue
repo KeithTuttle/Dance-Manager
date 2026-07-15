@@ -10,6 +10,7 @@ import {
   FolderPlus,
   ArrowUp,
   ArrowDown,
+  Users,
 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
 import { confirm } from '@/lib/confirm'
@@ -92,25 +93,59 @@ const displayGroups = computed(() => {
   return groups
 })
 
+/** studentIds attached to a standalone/quick-add number. */
+function studentIdsOf(entry: ShowProgram): number[] {
+  if (!entry.studentIds) return []
+  try {
+    const parsed = JSON.parse(entry.studentIds)
+    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+/** The dancers in a number: class recital participation (routine) or attached students (standalone). */
+function studentSetFor(entry: ShowProgram): Set<number> {
+  if (entry.routineId != null) {
+    const routine = routineMap.value.get(entry.routineId)
+    return (routine && participatingByClass.value.get(routine.classId)) || new Set<number>()
+  }
+  return new Set(studentIdsOf(entry))
+}
+
+function nameOf(id: number): string {
+  const s = studentMap.value.get(id)
+  return s ? `${s.firstName} ${s.lastName}` : `Student #${id}`
+}
+
 /** Names sharing back-to-back numbers between an entry and the next in the same section. */
 function quickChangeNames(entries: ShowProgram[], index: number): string[] {
   const cur = entries[index]
   const next = entries[index + 1]
   if (!cur || !next) return [] // last number in the section has nothing after it
-  const a = rowInfo(cur).routine
-  const b = rowInfo(next).routine
-  if (!a || !b) return []
-  const setA = participatingByClass.value.get(a.classId)
-  const setB = participatingByClass.value.get(b.classId)
-  if (!setA || !setB) return []
+  const setA = studentSetFor(cur)
+  const setB = studentSetFor(next)
+  if (setA.size === 0 || setB.size === 0) return []
   const names: string[] = []
-  for (const id of setA) {
-    if (setB.has(id)) {
-      const s = studentMap.value.get(id)
-      names.push(s ? `${s.firstName} ${s.lastName}` : `Student #${id}`)
-    }
-  }
+  for (const id of setA) if (setB.has(id)) names.push(nameOf(id))
   return names
+}
+
+// Which standalone number's student picker is open (entry id) — or null.
+const studentsOpenFor = ref<number | null>(null)
+
+async function toggleStudent(entry: ShowProgram, studentId: number) {
+  const current = studentIdsOf(entry)
+  const next = current.includes(studentId)
+    ? current.filter((id) => id !== studentId)
+    : [...current, studentId]
+  entry.studentIds = JSON.stringify(next)
+  program.value = [...program.value]
+  try {
+    await api.put(`/showprogram/${entry.id}`, entry)
+  } catch {
+    /* api.ts surfaces the error toast */
+  }
 }
 
 async function safeGet<T>(url: string): Promise<T[]> {
@@ -519,8 +554,21 @@ watch(() => studioStore.selectedStudioId, load)
                 <p v-if="rowInfo(entry).className" class="truncate text-xs text-muted-foreground">
                   {{ rowInfo(entry).className }}
                 </p>
+                <p v-else-if="studentIdsOf(entry).length" class="truncate text-xs text-muted-foreground">
+                  {{ studentIdsOf(entry).map(nameOf).join(', ') }}
+                </p>
                 <p v-else class="truncate text-xs italic text-muted-foreground">Guest / other number</p>
               </div>
+              <!-- Attach students (standalone/quick-add numbers only) -->
+              <button
+                v-if="entry.routineId == null"
+                class="inline-flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+                :title="'Add students from your roster to this number'"
+                @click="studentsOpenFor = studentsOpenFor === entry.id ? null : entry.id"
+              >
+                <Users class="h-3.5 w-3.5" />
+                <span v-if="studentIdsOf(entry).length" class="tabular-nums">{{ studentIdsOf(entry).length }}</span>
+              </button>
               <select
                 :value="entry.sectionId ?? ''"
                 class="h-7 max-w-[9rem] rounded border border-border bg-background px-1.5 text-xs text-muted-foreground"
@@ -537,6 +585,35 @@ watch(() => studioStore.selectedStudioId, load)
               >
                 <Trash2 class="h-4 w-4" />
               </button>
+            </li>
+
+            <!-- Student picker for a standalone/quick-add number -->
+            <li
+              v-if="studentsOpenFor === entry.id"
+              :key="`stu-${entry.id}`"
+              class="bg-muted/30 px-3 py-2.5"
+            >
+              <p class="mb-1.5 text-xs font-medium text-muted-foreground">
+                Students in this number (from your roster)
+              </p>
+              <p v-if="students.length === 0" class="text-xs text-muted-foreground">
+                No students in this studio yet.
+              </p>
+              <div v-else class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="s in students"
+                  :key="s.id"
+                  class="rounded-full border px-2 py-0.5 text-xs transition-colors"
+                  :class="
+                    studentIdsOf(entry).includes(s.id)
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  "
+                  @click="toggleStudent(entry, s.id)"
+                >
+                  {{ s.firstName }} {{ s.lastName }}
+                </button>
+              </div>
             </li>
 
             <!-- Quick Change Alert between consecutive numbers in this section -->
