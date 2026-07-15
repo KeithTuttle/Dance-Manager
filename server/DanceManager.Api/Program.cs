@@ -47,6 +47,8 @@ builder.Services.AddScoped<ShowOrderPdfService>();
 builder.Services.AddHttpClient(ImageFetchService.HttpClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<ImageFetchService>();
+// AI formation suggestions via Google Gemini (free tier). Reuses AddHttpClient above.
+builder.Services.AddScoped<FormationAiService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

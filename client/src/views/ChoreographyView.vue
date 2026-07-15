@@ -5,7 +5,7 @@ import { useStudioStore } from '@/stores/studio'
 import type { DanceClass, Routine, Formation, Student, RecitalParticipation, Gender } from '@/types'
 import { toast } from '@/lib/toast'
 import { confirm } from '@/lib/confirm'
-import { Download, Plus, Music, Loader2, Trash2 } from 'lucide-vue-next'
+import { Download, Plus, Music, Loader2, Trash2, Sparkles } from 'lucide-vue-next'
 
 const studioStore = useStudioStore()
 
@@ -420,6 +420,137 @@ function onPointerUp() {
   saveFormation()
 }
 
+// --- AI formation suggestion + quick layouts ---
+const aiConfigured = ref(true) // flipped false after probe if no Gemini key
+const aiDescription = ref('')
+const suggesting = ref(false)
+
+const rosterSummary = computed(() => {
+  const boys = participatingStudents.value.filter((s) => s.gender === 'Boys').length
+  const girls = participatingStudents.value.filter((s) => s.gender === 'Girls').length
+  const other = participatingStudents.value.length - boys - girls
+  const parts: string[] = []
+  if (boys) parts.push(`${boys} ${boys === 1 ? 'boy' : 'boys'}`)
+  if (girls) parts.push(`${girls} ${girls === 1 ? 'girl' : 'girls'}`)
+  if (other) parts.push(`${other} more`)
+  return parts.join(', ')
+})
+
+// Empty-roster probe: the endpoint short-circuits (no Gemini call) and just
+// reports whether a key is configured, so we can hide the AI box when it isn't.
+async function probeAiConfig() {
+  try {
+    const { data } = await api.post('/formations/suggest', { dancers: [], description: '' })
+    aiConfigured.value = data?.configured !== false
+  } catch {
+    aiConfigured.value = false
+  }
+}
+
+function applyLayout(coords: CoordMap) {
+  coordMap.value = coords
+  saveFormation()
+}
+
+async function suggestFormation() {
+  if (!selectedFormation.value || participatingStudents.value.length === 0) return
+  suggesting.value = true
+  try {
+    const dancers = participatingStudents.value.map((s) => ({
+      studentId: s.id,
+      gender: s.gender ?? null,
+      firstName: s.firstName ?? null,
+    }))
+    const { data } = await api.post('/formations/suggest', {
+      dancers,
+      description: aiDescription.value,
+    })
+    if (data?.configured === false) {
+      aiConfigured.value = false
+      toast.error('AI isn’t set up yet — use a Quick layout for now.')
+      return
+    }
+    if (!data?.ok || !data.coordinates) {
+      toast.error('Couldn’t generate a formation. Try again, or use a Quick layout.')
+      return
+    }
+    applyLayout({ ...(data.coordinates as CoordMap) })
+    toast.success('Formation suggested — drag any dancer to fine-tune.')
+  } catch {
+    toast.error('Couldn’t generate a formation. Try again, or use a Quick layout.')
+  } finally {
+    suggesting.value = false
+  }
+}
+
+// --- Deterministic quick layouts (free, offline; also the AI fallback) ---
+// x positions for `count` dancers, spread across x 15..85 and centered.
+function centeredRow(count: number): number[] {
+  if (count <= 1) return [50]
+  const left = 15
+  const step = (85 - left) / (count - 1)
+  return Array.from({ length: count }, (_, i) => left + i * step)
+}
+
+function layoutRows(rows: number) {
+  const list = participatingStudents.value
+  const n = list.length
+  if (n === 0) return
+  const perRow = Math.ceil(n / rows)
+  const coords: CoordMap = {}
+  let idx = 0
+  for (let r = 0; r < rows && idx < n; r++) {
+    const countThis = Math.min(perRow, n - idx)
+    const xs = centeredRow(countThis)
+    const y = rows === 1 ? 55 : 25 + r * (55 / (rows - 1))
+    for (let c = 0; c < countThis; c++, idx++) coords[String(list[idx].id)] = { x: xs[c], y }
+  }
+  applyLayout(coords)
+}
+
+function layoutStaggered() {
+  const list = participatingStudents.value
+  const n = list.length
+  if (n === 0) return
+  const coords: CoordMap = {}
+  const perRow = Math.ceil(n / 2)
+  let idx = 0
+  for (let r = 0; r < 2 && idx < n; r++) {
+    const countThis = Math.min(perRow, n - idx)
+    const xs = centeredRow(countThis)
+    const offset = r === 1 && xs.length > 1 ? (xs[1] - xs[0]) / 2 : 0
+    const y = 30 + r * 30
+    for (let c = 0; c < countThis; c++, idx++)
+      coords[String(list[idx].id)] = { x: Math.min(92, xs[c] + offset), y }
+  }
+  applyLayout(coords)
+}
+
+function layoutV() {
+  const list = participatingStudents.value
+  const n = list.length
+  if (n === 0) return
+  const coords: CoordMap = {}
+  const apexX = 50
+  const apexY = 22
+  const half = Math.max(1, Math.ceil((n - 1) / 2))
+  let li = 0
+  let ri = 0
+  list.forEach((s, i) => {
+    if (i === 0) {
+      coords[String(s.id)] = { x: apexX, y: apexY }
+      return
+    }
+    const goLeft = i % 2 === 1
+    const rank = goLeft ? ++li : ++ri
+    const t = rank / half
+    coords[String(s.id)] = { x: apexX + (goLeft ? -33 : 33) * t, y: apexY + 55 * t }
+  })
+  applyLayout(coords)
+}
+
+onMounted(probeAiConfig)
+
 // --- Generate Sub Handoff PDF ---
 async function generateHandoff() {
   if (!selectedClassId.value) return
@@ -628,6 +759,73 @@ async function generateHandoff() {
           >
             <Trash2 class="h-4 w-4" />
           </button>
+        </div>
+
+        <!-- AI suggestion + quick layouts -->
+        <div
+          v-if="selectedFormation"
+          class="mb-4 space-y-2 rounded-md border border-border bg-muted/30 p-3"
+        >
+          <p v-if="participatingStudents.length === 0" class="text-xs text-muted-foreground">
+            Mark students as participating (in the Roster) to arrange them here.
+          </p>
+          <template v-else>
+            <div v-if="aiConfigured" class="space-y-1.5">
+              <p class="text-xs font-medium text-muted-foreground">
+                Suggest with AI · arranging {{ rosterSummary }}
+              </p>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="aiDescription"
+                  placeholder="Describe the number — e.g. “upbeat jazz, boys down center”"
+                  class="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  @keyup.enter="suggestFormation"
+                />
+                <button
+                  class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  :disabled="suggesting"
+                  @click="suggestFormation"
+                >
+                  <Loader2 v-if="suggesting" class="h-4 w-4 animate-spin" />
+                  <Sparkles v-else class="h-4 w-4" />
+                  Suggest
+                </button>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-xs text-muted-foreground">Quick layouts:</span>
+              <button
+                class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                @click="layoutRows(1)"
+              >
+                One line
+              </button>
+              <button
+                class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                @click="layoutRows(2)"
+              >
+                Two rows
+              </button>
+              <button
+                class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                @click="layoutRows(3)"
+              >
+                Three rows
+              </button>
+              <button
+                class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                @click="layoutStaggered"
+              >
+                Staggered
+              </button>
+              <button
+                class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                @click="layoutV"
+              >
+                V-shape
+              </button>
+            </div>
+          </template>
         </div>
 
         <!-- Stage -->
