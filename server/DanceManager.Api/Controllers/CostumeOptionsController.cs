@@ -12,11 +12,13 @@ public class CostumeOptionsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly CostumePdfService _pdf;
+    private readonly ImageFetchService _images;
 
-    public CostumeOptionsController(AppDbContext db, CostumePdfService pdf)
+    public CostumeOptionsController(AppDbContext db, CostumePdfService pdf, ImageFetchService images)
     {
         _db = db;
         _pdf = pdf;
+        _images = images;
     }
 
     [HttpGet]
@@ -57,6 +59,15 @@ public class CostumeOptionsController : ControllerBase
             ? routine.SongTitle
             : $"{routine.SongTitle} — {routine.Artist}";
 
+        // Fetch each option's photo (guarded) concurrently; skip failures — the
+        // service falls back to printing the link for options without bytes.
+        var withPhotos = options.Where(o => !string.IsNullOrWhiteSpace(o.PhotoLink)).ToList();
+        var fetched = await Task.WhenAll(withPhotos.Select(async o =>
+            (o.Id, Bytes: await _images.TryFetchAsync(o.PhotoLink, HttpContext.RequestAborted))));
+        var photoBytes = fetched
+            .Where(f => f.Bytes is not null)
+            .ToDictionary(f => f.Id, f => f.Bytes!);
+
         var bytes = _pdf.Build(new CostumeSheetData
         {
             StudioName = studioName,
@@ -64,6 +75,7 @@ public class CostumeOptionsController : ControllerBase
             RoutineTitle = title,
             BoysOptions = options.Where(o => o.Gender == Gender.Boys).ToList(),
             GirlsOptions = options.Where(o => o.Gender == Gender.Girls).ToList(),
+            PhotoBytesByOptionId = photoBytes,
         });
 
         return File(bytes, "application/pdf", "costume-sheet.pdf");

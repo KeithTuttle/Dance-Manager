@@ -98,9 +98,19 @@ export interface Enrollment {
   classId: number
 }
 
+export interface ShowSection {
+  id: number
+  studioId: number
+  name: string
+  orderIndex: number
+}
+
 export interface ShowProgram {
   id: number
-  routineId: number
+  routineId: number | null
+  sectionId?: number | null
+  studioId?: number | null
+  title?: string | null
   orderPosition: number
 }
 

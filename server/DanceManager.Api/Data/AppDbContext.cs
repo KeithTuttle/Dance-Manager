@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<RecitalParticipation> RecitalParticipations => Set<RecitalParticipation>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<ShowProgram> ShowPrograms => Set<ShowProgram>();
+    public DbSet<ShowSection> ShowSections => Set<ShowSection>();
     public DbSet<CostumeRecord> CostumeRecords => Set<CostumeRecord>();
     public DbSet<SongChoice> SongChoices => Set<SongChoice>();
     public DbSet<CostumeOption> CostumeOptions => Set<CostumeOption>();
@@ -77,6 +78,17 @@ public class AppDbContext : DbContext
         b.Entity<StudentNote>()
             .HasOne(x => x.Class).WithMany().HasForeignKey(x => x.ClassId)
             .OnDelete(DeleteBehavior.SetNull);
+        // Deleting a section must NOT delete its numbers — they fall back to
+        // "Unassigned" (SectionId null).
+        b.Entity<ShowProgram>()
+            .HasOne(x => x.Section).WithMany().HasForeignKey(x => x.SectionId)
+            .OnDelete(DeleteBehavior.SetNull);
+        // RoutineId is now optional (quick-add entries have none). Keep the delete
+        // behavior Cascade — deleting a routine still removes its show entry —
+        // rather than the SetNull EF would otherwise default to for an optional FK.
+        b.Entity<ShowProgram>()
+            .HasOne(x => x.Routine).WithMany().HasForeignKey(x => x.RoutineId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Helpful uniqueness / lookup indexes.
         b.Entity<AttendanceRecord>().HasIndex(x => new { x.StudentId, x.ClassId, x.Date }).IsUnique();
