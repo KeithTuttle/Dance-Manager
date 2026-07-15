@@ -94,8 +94,11 @@ const displayGroups = computed(() => {
 
 /** Names sharing back-to-back numbers between an entry and the next in the same section. */
 function quickChangeNames(entries: ShowProgram[], index: number): string[] {
-  const a = rowInfo(entries[index]).routine
-  const b = rowInfo(entries[index + 1]).routine
+  const cur = entries[index]
+  const next = entries[index + 1]
+  if (!cur || !next) return [] // last number in the section has nothing after it
+  const a = rowInfo(cur).routine
+  const b = rowInfo(next).routine
   if (!a || !b) return []
   const setA = participatingByClass.value.get(a.classId)
   const setB = participatingByClass.value.get(b.classId)
