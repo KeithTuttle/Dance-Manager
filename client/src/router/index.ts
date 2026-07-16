@@ -44,6 +44,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Recital' },
   },
   {
+    path: '/musical-planner',
+    name: 'musical-planner',
+    component: () => import('@/views/MusicalPlannerView.vue'),
+    meta: { title: 'Musical Planner' },
+  },
+  {
     path: '/auditions',
     name: 'auditions',
     component: () => import('@/views/AuditionsView.vue'),

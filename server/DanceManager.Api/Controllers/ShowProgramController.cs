@@ -129,12 +129,18 @@ public class ShowProgramController : ControllerBase
             .Where(s => s.StudioId == studioId)
             .ToListAsync();
 
+        // Explicit per-number casts for this studio's numbers (override participation).
+        var casts = await _db.RoutineCasts
+            .Where(c => c.Routine != null && c.Routine.Class != null && c.Routine.Class.StudioId == studioId)
+            .ToListAsync();
+
         var data = new ShowOrderData
         {
             StudioName = studioName,
             Sections = sections,
             Program = program,
             Participations = participations,
+            RoutineCasts = casts,
             Students = students,
         };
 

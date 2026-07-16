@@ -16,7 +16,15 @@ import { api } from '@/lib/api'
 import { confirm } from '@/lib/confirm'
 import { toast } from '@/lib/toast'
 import { useStudioStore } from '@/stores/studio'
-import type { ShowProgram, ShowSection, Routine, DanceClass, RecitalParticipation, Student } from '@/types'
+import type {
+  ShowProgram,
+  ShowSection,
+  Routine,
+  DanceClass,
+  RecitalParticipation,
+  Student,
+  RoutineCast,
+} from '@/types'
 
 const studioStore = useStudioStore()
 
@@ -26,6 +34,7 @@ const routines = ref<Routine[]>([])
 const classes = ref<DanceClass[]>([])
 const participations = ref<RecitalParticipation[]>([])
 const students = ref<Student[]>([])
+const casts = ref<RoutineCast[]>([])
 const loading = ref(false)
 
 // Routines not yet in the show order, available to add.
@@ -47,6 +56,16 @@ const participatingByClass = computed(() => {
     if (!p.isParticipating) continue
     if (!map.has(p.classId)) map.set(p.classId, new Set())
     map.get(p.classId)!.add(p.studentId)
+  }
+  return map
+})
+
+/** studentIds explicitly cast in a given routine (musical numbers). */
+const castByRoutine = computed(() => {
+  const map = new Map<number, Set<number>>()
+  for (const c of casts.value) {
+    if (!map.has(c.routineId)) map.set(c.routineId, new Set())
+    map.get(c.routineId)!.add(c.studentId)
   }
   return map
 })
@@ -104,9 +123,15 @@ function studentIdsOf(entry: ShowProgram): number[] {
   }
 }
 
-/** The dancers in a number: class recital participation (routine) or attached students (standalone). */
+/**
+ * The dancers in a number: for a routine, its explicit cast (musical numbers)
+ * if any, else the class's recital participation; for a standalone number, the
+ * attached students. Mirrors the backend's StudentSet.
+ */
 function studentSetFor(entry: ShowProgram): Set<number> {
   if (entry.routineId != null) {
+    const cast = castByRoutine.value.get(entry.routineId)
+    if (cast && cast.size > 0) return cast
     const routine = routineMap.value.get(entry.routineId)
     return (routine && participatingByClass.value.get(routine.classId)) || new Set<number>()
   }
@@ -162,13 +187,14 @@ async function load() {
   const studioId = studioStore.selectedStudioId
   const q = studioId ? `?studioId=${studioId}` : ''
   try {
-    const [prog, secs, rts, cls, parts, studs] = await Promise.all([
+    const [prog, secs, rts, cls, parts, studs, cst] = await Promise.all([
       safeGet<ShowProgram>(`/showprogram${q}`),
       safeGet<ShowSection>(`/showsections${q}`),
       safeGet<Routine>(`/routines${q}`),
       safeGet<DanceClass>(`/classes${q}`),
       safeGet<RecitalParticipation>('/recitalparticipation'),
       safeGet<Student>(`/students${q}`),
+      safeGet<RoutineCast>(`/routinecast${q}`),
     ])
     program.value = prog
     sections.value = secs
@@ -176,6 +202,7 @@ async function load() {
     classes.value = cls
     participations.value = parts
     students.value = studs
+    casts.value = cst
   } finally {
     loading.value = false
   }

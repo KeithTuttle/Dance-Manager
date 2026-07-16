@@ -98,6 +98,12 @@ export interface Enrollment {
   classId: number
 }
 
+/** Per-number (musical) casting: which students are cast in a routine. */
+export interface RoutineCast {
+  routineId: number
+  studentId: number
+}
+
 export interface ShowSection {
   id: number
   studioId: number
