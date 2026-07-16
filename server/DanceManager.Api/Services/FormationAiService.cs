@@ -49,7 +49,10 @@ public class FormationAiService
         _httpFactory = httpFactory;
         _logger = logger;
         _apiKey = config["Gemini:ApiKey"];
-        _configuredModel = string.IsNullOrWhiteSpace(config["Gemini:Model"]) ? "gemini-2.5-flash" : config["Gemini:Model"]!;
+        // "gemini-flash-lite-latest" is an alias that always tracks the current
+        // lite flash model: fast (~1s), free-tier friendly, and no pinned version
+        // to go stale — the most future-proof default. Override via Gemini:Model.
+        _configuredModel = string.IsNullOrWhiteSpace(config["Gemini:Model"]) ? "gemini-flash-lite-latest" : config["Gemini:Model"]!;
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
@@ -109,7 +112,8 @@ public class FormationAiService
         });
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(8));
+        // Generous: current flash models often "think" before answering (10–20s).
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
         var client = _httpFactory.CreateClient();
 
         var model = _resolvedModel ?? _configuredModel;
@@ -132,13 +136,20 @@ public class FormationAiService
             resp.EnsureSuccessStatusCode();
             using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
-            // candidates[0].content.parts[0].text holds the JSON array (responseMimeType=json).
-            return doc.RootElement
-                .GetProperty("candidates")[0]
-                .GetProperty("content")
-                .GetProperty("parts")[0]
-                .GetProperty("text")
-                .GetString() ?? throw new InvalidOperationException("empty Gemini text");
+            // The answer is a text part under candidates[0].content.parts. Thinking
+            // models may prepend a separate part flagged "thought": true — skip those
+            // and take the first real text part (robust across model generations).
+            var parts = doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts");
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("thought", out var th) && th.ValueKind == JsonValueKind.True) continue;
+                if (part.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                {
+                    var s = t.GetString();
+                    if (!string.IsNullOrWhiteSpace(s)) return s!;
+                }
+            }
+            throw new InvalidOperationException("no text part in Gemini response");
         }
     }
 
@@ -170,30 +181,37 @@ public class FormationAiService
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (!doc.RootElement.TryGetProperty("models", out var models)) return null;
 
-            string? bestFlash = null;
-            string? anyGenerate = null;
+            // Specialized / non-text variants that support generateContent but reject
+            // our text+JSON request (image, speech, embeddings, tool-only, etc.).
+            string[] disallowed =
+            {
+                "tts", "image", "audio", "embed", "vision", "live", "aqa", "learnlm",
+                "omni", "nano", "lyria", "veo", "imagen", "customtools", "gemma", "deep-research",
+            };
+            bool IsPlainText(string id) =>
+                !disallowed.Any(bad => id.Contains(bad, StringComparison.OrdinalIgnoreCase));
+
+            var candidates = new List<string>();
             foreach (var m in models.EnumerateArray())
             {
-                // Only models that support text generation.
                 if (!m.TryGetProperty("supportedGenerationMethods", out var methods)) continue;
-                var supportsGenerate = methods.EnumerateArray()
-                    .Any(x => x.GetString() == "generateContent");
-                if (!supportsGenerate) continue;
-
+                if (!methods.EnumerateArray().Any(x => x.GetString() == "generateContent")) continue;
                 var name = m.GetProperty("name").GetString() ?? "";
                 var id = name.StartsWith("models/") ? name["models/".Length..] : name;
-                anyGenerate ??= id;
-
-                // Prefer a plain "flash" model (fast + free tier), skipping niche variants.
-                if (id.Contains("flash", StringComparison.OrdinalIgnoreCase)
-                    && !id.Contains("vision", StringComparison.OrdinalIgnoreCase)
-                    && !id.Contains("thinking", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Keep the last (typically newest) matching flash id.
-                    bestFlash = id;
-                }
+                if (IsPlainText(id)) candidates.Add(id);
             }
-            return bestFlash ?? anyGenerate;
+
+            // Prefer the fast lite-flash "latest" alias, then any current flash, then
+            // any generateContent model. Fast + free + always-current for this task.
+            bool Has(string c, string s) => c.Contains(s, StringComparison.OrdinalIgnoreCase);
+            return candidates.FirstOrDefault(c => c == "gemini-flash-lite-latest")
+                ?? candidates.FirstOrDefault(c => c == "gemini-flash-latest")
+                ?? candidates.FirstOrDefault(c => c.EndsWith("-flash-lite-latest", StringComparison.OrdinalIgnoreCase))
+                ?? candidates.FirstOrDefault(c => c.EndsWith("-flash-latest", StringComparison.OrdinalIgnoreCase))
+                ?? candidates.FirstOrDefault(c => Has(c, "flash") && Has(c, "lite") && !Has(c, "preview"))
+                ?? candidates.FirstOrDefault(c => Has(c, "flash") && !Has(c, "preview"))
+                ?? candidates.FirstOrDefault(c => Has(c, "flash"))
+                ?? candidates.FirstOrDefault();
         }
         catch
         {
