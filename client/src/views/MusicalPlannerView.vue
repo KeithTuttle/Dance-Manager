@@ -130,13 +130,14 @@ const costumeLabels = computed(() =>
     ),
   ].sort(),
 )
-// Two adjacent numbers sharing the same non-empty costume need no change.
-function sameCostume(a: ShowProgram, b: ShowProgram): boolean {
+// A quick change is only asserted with definitive data: BOTH adjacent numbers
+// have a costume label and they differ. Unlabeled numbers never flag.
+function costumeChanges(a: ShowProgram, b: ShowProgram): boolean {
   const ra = a.routineId != null ? routineById.value.get(a.routineId) : undefined
   const rb = b.routineId != null ? routineById.value.get(b.routineId) : undefined
   const ca = ra?.costumeLabel?.trim().toLowerCase()
   const cb = rb?.costumeLabel?.trim().toLowerCase()
-  return !!ca && !!cb && ca === cb
+  return !!ca && !!cb && ca !== cb
 }
 // studentId -> names of numbers they quick-change between (adjacent within a section).
 const conflictsByStudent = computed(() => {
@@ -147,7 +148,7 @@ const conflictsByStudent = computed(() => {
   groups.push(showProgram.value.filter((p) => p.sectionId == null).sort(byPos))
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
-      if (sameCostume(g[i], g[i + 1])) continue // same costume — no change
+      if (!costumeChanges(g[i], g[i + 1])) continue // only flag a proven costume change
       const a = entryDancers(g[i])
       const b = entryDancers(g[i + 1])
       if (a.size === 0 || b.size === 0) continue
@@ -279,7 +280,7 @@ const quickChangeList = computed(() => {
   const out: { a: string; b: string; dancers: string[] }[] = []
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
-      if (sameCostume(g[i], g[i + 1])) continue // same costume — no change
+      if (!costumeChanges(g[i], g[i + 1])) continue // only flag a proven costume change
       const sa = entryDancers(g[i])
       const sb = entryDancers(g[i + 1])
       if (sa.size === 0 || sb.size === 0) continue
@@ -1129,10 +1130,11 @@ const hoveredNumberId = ref<number | null>(null)
           <p v-if="showProgram.length === 0" class="mt-2 text-xs text-muted-foreground">
             Set a running order in
             <RouterLink to="/recital" class="underline">Show order</RouterLink>
-            to see back-to-back conflicts here.
+            to see back-to-back costume changes here.
           </p>
           <p v-else-if="quickChangeList.length === 0" class="mt-2 text-xs text-muted-foreground">
-            No back-to-back conflicts in the current running order. 🎉
+            No costume changes flagged. A quick change only shows when two back-to-back numbers
+            have <em>different</em> costume labels — set a Costume on each number to track this.
           </p>
           <div v-else class="mt-2 space-y-1">
             <div v-for="(qc, i) in quickChangeList" :key="i" class="text-xs leading-relaxed">

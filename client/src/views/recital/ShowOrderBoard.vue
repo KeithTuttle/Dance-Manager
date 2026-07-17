@@ -143,13 +143,17 @@ function nameOf(id: number): string {
   return s ? `${s.firstName} ${s.lastName}` : `Student #${id}`
 }
 
-/** Both entries are routine-linked and share the same non-empty costume => no change. */
-function sameCostume(a: ShowProgram, b: ShowProgram): boolean {
+/**
+ * A quick change is only asserted with definitive data: both entries are
+ * routine-linked, both have a costume label, and the labels differ. Unlabeled
+ * numbers never flag.
+ */
+function costumeChanges(a: ShowProgram, b: ShowProgram): boolean {
   const ra = a.routineId != null ? routineMap.value.get(a.routineId) : undefined
   const rb = b.routineId != null ? routineMap.value.get(b.routineId) : undefined
   const ca = ra?.costumeLabel?.trim().toLowerCase()
   const cb = rb?.costumeLabel?.trim().toLowerCase()
-  return !!ca && !!cb && ca === cb
+  return !!ca && !!cb && ca !== cb
 }
 
 /** Names sharing back-to-back numbers between an entry and the next in the same section. */
@@ -157,7 +161,7 @@ function quickChangeNames(entries: ShowProgram[], index: number): string[] {
   const cur = entries[index]
   const next = entries[index + 1]
   if (!cur || !next) return [] // last number in the section has nothing after it
-  if (sameCostume(cur, next)) return [] // same costume — no change needed
+  if (!costumeChanges(cur, next)) return [] // only flag a proven costume change
   const setA = studentSetFor(cur)
   const setB = studentSetFor(next)
   if (setA.size === 0 || setB.size === 0) return []
