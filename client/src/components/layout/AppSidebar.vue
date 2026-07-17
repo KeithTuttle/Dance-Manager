@@ -11,6 +11,7 @@ import {
   NotebookPen,
   Music,
   Theater,
+  Drama,
   ClipboardList,
   Settings,
   CircleUser,
@@ -47,6 +48,7 @@ const nav = [
   { to: '/lesson-plans', label: 'Lesson Plans', icon: NotebookPen },
   { to: '/choreography', label: 'Choreography', icon: Music },
   { to: '/recital', label: 'Recital', icon: Theater },
+  { to: '/musical-planner', label: 'Musical Planner', icon: Drama },
   { to: '/auditions', label: 'Auditions', icon: ClipboardList },
 ]
 

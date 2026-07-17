@@ -15,6 +15,8 @@ public class ShowOrderData
     public List<ShowProgram> Program { get; set; } = new();
     /// <summary>Participating (IsParticipating) recital participation rows.</summary>
     public List<RecitalParticipation> Participations { get; set; } = new();
+    /// <summary>Explicit per-number casts (override participation for a routine when present).</summary>
+    public List<RoutineCast> RoutineCasts { get; set; } = new();
     public List<Student> Students { get; set; } = new();
 }
 
@@ -36,6 +38,15 @@ public class ShowOrderPdfService
                 participatingByClass[p.ClassId] = set = new HashSet<int>();
             set.Add(p.StudentId);
         }
+        // routineId -> explicit cast studentIds (overrides class participation when present).
+        var castByRoutine = new Dictionary<int, HashSet<int>>();
+        foreach (var c in data.RoutineCasts)
+        {
+            if (!castByRoutine.TryGetValue(c.RoutineId, out var set))
+                castByRoutine[c.RoutineId] = set = new HashSet<int>();
+            set.Add(c.StudentId);
+        }
+
         var studentName = data.Students.ToDictionary(
             s => s.Id, s => $"{s.FirstName} {s.LastName}".Trim());
 
@@ -87,7 +98,7 @@ public class ShowOrderPdfService
                     {
                         if (entries.Count == 0) continue;
                         col.Item().Element(c => ComposeGroup(
-                            c, header, entries, startNumber, participatingByClass, studentName));
+                            c, header, entries, startNumber, participatingByClass, castByRoutine, studentName));
                     }
                 });
 
@@ -112,6 +123,7 @@ public class ShowOrderPdfService
         List<ShowProgram> entries,
         int startNumber,
         Dictionary<int, HashSet<int>> participatingByClass,
+        Dictionary<int, HashSet<int>> castByRoutine,
         Dictionary<int, string> studentName)
     {
         container.Column(col =>
@@ -128,7 +140,7 @@ public class ShowOrderPdfService
                     ? (string.IsNullOrWhiteSpace(routine.SongTitle) ? "Untitled routine" : routine.SongTitle)
                     : (string.IsNullOrWhiteSpace(entry.Title) ? "Untitled number" : entry.Title!);
                 var className = routine?.Class?.Name;
-                var dancers = StudentSet(entry, participatingByClass);
+                var dancers = StudentSet(entry, participatingByClass, castByRoutine);
 
                 col.Item().PaddingTop(i == 0 ? 0 : 4).Row(row =>
                 {
@@ -154,7 +166,7 @@ public class ShowOrderPdfService
                 // Quick-change flag: consecutive numbers in THIS section sharing a dancer.
                 if (i < entries.Count - 1)
                 {
-                    var shared = SharedDancers(entry, entries[i + 1], participatingByClass, studentName);
+                    var shared = SharedDancers(entry, entries[i + 1], participatingByClass, castByRoutine, studentName);
                     if (shared.Count > 0)
                     {
                         col.Item().PaddingTop(2).PaddingLeft(28).Text(t =>
@@ -171,10 +183,11 @@ public class ShowOrderPdfService
     private static List<string> SharedDancers(
         ShowProgram a, ShowProgram b,
         Dictionary<int, HashSet<int>> participatingByClass,
+        Dictionary<int, HashSet<int>> castByRoutine,
         Dictionary<int, string> studentName)
     {
-        var setA = StudentSet(a, participatingByClass);
-        var setB = StudentSet(b, participatingByClass);
+        var setA = StudentSet(a, participatingByClass, castByRoutine);
+        var setB = StudentSet(b, participatingByClass, castByRoutine);
         if (setA.Count == 0 || setB.Count == 0) return new();
         return setA.Where(setB.Contains)
             .Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
@@ -182,12 +195,18 @@ public class ShowOrderPdfService
             .ToList();
     }
 
-    /// <summary>Dancers in a number: class recital participation (routine-linked) or the
-    /// students explicitly attached to a standalone/quick-add number.</summary>
-    private static HashSet<int> StudentSet(ShowProgram entry, Dictionary<int, HashSet<int>> participatingByClass)
+    /// <summary>Dancers in a number: the routine's explicit cast if any, else the class's
+    /// recital participation (routine-linked), or the students attached to a standalone number.</summary>
+    private static HashSet<int> StudentSet(
+        ShowProgram entry,
+        Dictionary<int, HashSet<int>> participatingByClass,
+        Dictionary<int, HashSet<int>> castByRoutine)
     {
         if (entry.RoutineId is not null)
         {
+            // Explicit per-number cast wins over class participation.
+            if (castByRoutine.TryGetValue(entry.RoutineId.Value, out var cast) && cast.Count > 0)
+                return cast;
             var classId = entry.Routine?.Class?.Id;
             if (classId is not null && participatingByClass.TryGetValue(classId.Value, out var set))
                 return set;
