@@ -457,6 +457,15 @@ async function renameNumber(routine: Routine) {
   }
 }
 
+// Click-to-reuse an existing costume (exact match, no typo drift).
+function setCostume(routine: Routine, label: string) {
+  routine.costumeLabel = label
+  renameNumber(routine)
+}
+function isSameCostumeLabel(routine: Routine | null, label: string): boolean {
+  return (routine?.costumeLabel ?? '').trim().toLowerCase() === label.toLowerCase()
+}
+
 async function moveNumberGroup(routine: Routine, classId: number) {
   if (routine.classId === classId) return
   routine.classId = classId
@@ -814,6 +823,25 @@ const hoveredNumberId = ref<number | null>(null)
             @click="deleteNumber(selectedRoutine)"
           >
             <Trash2 class="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
+
+        <!-- Click-to-reuse an existing costume (avoids retyping / typos) -->
+        <div v-if="costumeLabels.length" class="-mt-2 mb-4 flex flex-wrap items-center gap-1">
+          <span class="text-[11px] text-muted-foreground">Costumes in use:</span>
+          <button
+            v-for="c in costumeLabels"
+            :key="c"
+            type="button"
+            class="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+            :class="
+              isSameCostumeLabel(selectedRoutine, c)
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border text-muted-foreground hover:bg-accent'
+            "
+            @click="setCostume(selectedRoutine, c)"
+          >
+            {{ c }}
           </button>
         </div>
 
@@ -1271,7 +1299,7 @@ const hoveredNumberId = ref<number | null>(null)
             <p class="mt-0.5">Cast here and in a back-to-back number: {{ focusNumberConflictNames.join(', ') }}.</p>
           </div>
 
-          <label class="mb-4 block space-y-1">
+          <label class="mb-2 block space-y-1">
             <span class="text-xs font-medium text-muted-foreground">Costume</span>
             <input
               v-model="focusNumber.costumeLabel"
@@ -1281,6 +1309,23 @@ const hoveredNumberId = ref<number | null>(null)
               @change="renameNumber(focusNumber)"
             />
           </label>
+          <div v-if="costumeLabels.length" class="mb-4 flex flex-wrap items-center gap-1">
+            <span class="text-[11px] text-muted-foreground">In use:</span>
+            <button
+              v-for="c in costumeLabels"
+              :key="c"
+              type="button"
+              class="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+              :class="
+                isSameCostumeLabel(focusNumber, c)
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border text-muted-foreground hover:bg-accent'
+              "
+              @click="setCostume(focusNumber, c)"
+            >
+              {{ c }}
+            </button>
+          </div>
 
           <button
             class="mb-4 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
