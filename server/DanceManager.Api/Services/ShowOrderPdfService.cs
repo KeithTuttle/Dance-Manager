@@ -186,6 +186,8 @@ public class ShowOrderPdfService
         Dictionary<int, HashSet<int>> castByRoutine,
         Dictionary<int, string> studentName)
     {
+        // Same costume in both numbers => the dancer stays dressed; no quick change.
+        if (SameCostume(a, b)) return new();
         var setA = StudentSet(a, participatingByClass, castByRoutine);
         var setB = StudentSet(b, participatingByClass, castByRoutine);
         if (setA.Count == 0 || setB.Count == 0) return new();
@@ -193,6 +195,15 @@ public class ShowOrderPdfService
             .Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
             .OrderBy(n => n)
             .ToList();
+    }
+
+    /// <summary>True when both numbers are routine-linked and share the same non-empty costume label.</summary>
+    private static bool SameCostume(ShowProgram a, ShowProgram b)
+    {
+        var ca = a.Routine?.CostumeLabel?.Trim();
+        var cb = b.Routine?.CostumeLabel?.Trim();
+        return !string.IsNullOrEmpty(ca) && !string.IsNullOrEmpty(cb)
+            && string.Equals(ca, cb, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Dancers in a number: the routine's explicit cast if any, else the class's

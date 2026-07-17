@@ -121,6 +121,23 @@ function entryDancers(entry: ShowProgram): Set<number> {
     return new Set()
   }
 }
+const routineById = computed(() => new Map(routines.value.map((r) => [r.id, r])))
+// Distinct costume labels already in use, for the reuse datalist.
+const costumeLabels = computed(() =>
+  [
+    ...new Set(
+      routines.value.map((r) => r.costumeLabel?.trim()).filter((l): l is string => !!l),
+    ),
+  ].sort(),
+)
+// Two adjacent numbers sharing the same non-empty costume need no change.
+function sameCostume(a: ShowProgram, b: ShowProgram): boolean {
+  const ra = a.routineId != null ? routineById.value.get(a.routineId) : undefined
+  const rb = b.routineId != null ? routineById.value.get(b.routineId) : undefined
+  const ca = ra?.costumeLabel?.trim().toLowerCase()
+  const cb = rb?.costumeLabel?.trim().toLowerCase()
+  return !!ca && !!cb && ca === cb
+}
 // studentId -> names of numbers they quick-change between (adjacent within a section).
 const conflictsByStudent = computed(() => {
   const map = new Map<number, Set<number>>() // studentId -> set of routineIds involved
@@ -130,6 +147,7 @@ const conflictsByStudent = computed(() => {
   groups.push(showProgram.value.filter((p) => p.sectionId == null).sort(byPos))
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
+      if (sameCostume(g[i], g[i + 1])) continue // same costume — no change
       const a = entryDancers(g[i])
       const b = entryDancers(g[i + 1])
       if (a.size === 0 || b.size === 0) continue
@@ -261,6 +279,7 @@ const quickChangeList = computed(() => {
   const out: { a: string; b: string; dancers: string[] }[] = []
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
+      if (sameCostume(g[i], g[i + 1])) continue // same costume — no change
       const sa = entryDancers(g[i])
       const sb = entryDancers(g[i + 1])
       if (sa.size === 0 || sb.size === 0) continue
@@ -778,6 +797,17 @@ const hoveredNumberId = ref<number | null>(null)
               <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </label>
+          <label class="min-w-[10rem] space-y-1">
+            <span class="text-xs text-muted-foreground">Costume</span>
+            <input
+              v-model="selectedRoutine.costumeLabel"
+              list="mp-costume-labels"
+              placeholder="e.g. Red velvet dress"
+              title="Numbers with the same costume won't flag a quick change back-to-back"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="renameNumber(selectedRoutine)"
+            />
+          </label>
           <button
             class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             @click="deleteNumber(selectedRoutine)"
@@ -1239,6 +1269,17 @@ const hoveredNumberId = ref<number | null>(null)
             <p class="mt-0.5">Cast here and in a back-to-back number: {{ focusNumberConflictNames.join(', ') }}.</p>
           </div>
 
+          <label class="mb-4 block space-y-1">
+            <span class="text-xs font-medium text-muted-foreground">Costume</span>
+            <input
+              v-model="focusNumber.costumeLabel"
+              list="mp-costume-labels"
+              placeholder="e.g. Red velvet dress"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="renameNumber(focusNumber)"
+            />
+          </label>
+
           <button
             class="mb-4 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
             @click="arrangeNumber(focusNumber.id)"
@@ -1274,5 +1315,10 @@ const hoveredNumberId = ref<number | null>(null)
         </div>
       </div>
     </div>
+
+    <!-- Costume label suggestions (reused across numbers), available in any view -->
+    <datalist id="mp-costume-labels">
+      <option v-for="c in costumeLabels" :key="c" :value="c" />
+    </datalist>
   </div>
 </template>
