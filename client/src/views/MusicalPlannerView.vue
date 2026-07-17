@@ -121,6 +121,24 @@ function entryDancers(entry: ShowProgram): Set<number> {
     return new Set()
   }
 }
+const routineById = computed(() => new Map(routines.value.map((r) => [r.id, r])))
+// Distinct costume labels already in use, for the reuse datalist.
+const costumeLabels = computed(() =>
+  [
+    ...new Set(
+      routines.value.map((r) => r.costumeLabel?.trim()).filter((l): l is string => !!l),
+    ),
+  ].sort(),
+)
+// A quick change is only asserted with definitive data: BOTH adjacent numbers
+// have a costume label and they differ. Unlabeled numbers never flag.
+function costumeChanges(a: ShowProgram, b: ShowProgram): boolean {
+  const ra = a.routineId != null ? routineById.value.get(a.routineId) : undefined
+  const rb = b.routineId != null ? routineById.value.get(b.routineId) : undefined
+  const ca = ra?.costumeLabel?.trim().toLowerCase()
+  const cb = rb?.costumeLabel?.trim().toLowerCase()
+  return !!ca && !!cb && ca !== cb
+}
 // studentId -> names of numbers they quick-change between (adjacent within a section).
 const conflictsByStudent = computed(() => {
   const map = new Map<number, Set<number>>() // studentId -> set of routineIds involved
@@ -130,6 +148,7 @@ const conflictsByStudent = computed(() => {
   groups.push(showProgram.value.filter((p) => p.sectionId == null).sort(byPos))
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
+      if (!costumeChanges(g[i], g[i + 1])) continue // only flag a proven costume change
       const a = entryDancers(g[i])
       const b = entryDancers(g[i + 1])
       if (a.size === 0 || b.size === 0) continue
@@ -261,6 +280,7 @@ const quickChangeList = computed(() => {
   const out: { a: string; b: string; dancers: string[] }[] = []
   for (const g of groups) {
     for (let i = 0; i < g.length - 1; i++) {
+      if (!costumeChanges(g[i], g[i + 1])) continue // only flag a proven costume change
       const sa = entryDancers(g[i])
       const sb = entryDancers(g[i + 1])
       if (sa.size === 0 || sb.size === 0) continue
@@ -437,6 +457,15 @@ async function renameNumber(routine: Routine) {
   }
 }
 
+// Click-to-reuse an existing costume (exact match, no typo drift).
+function setCostume(routine: Routine, label: string) {
+  routine.costumeLabel = label
+  renameNumber(routine)
+}
+function isSameCostumeLabel(routine: Routine | null, label: string): boolean {
+  return (routine?.costumeLabel ?? '').trim().toLowerCase() === label.toLowerCase()
+}
+
 async function moveNumberGroup(routine: Routine, classId: number) {
   if (routine.classId === classId) return
   routine.classId = classId
@@ -574,6 +603,42 @@ function openNumber(routineId: number) {
   selectedRoutineId.value = routineId
   view.value = 'plan'
 }
+
+// --- Per-number detail drawer (edit a number's cast from the overview) ---
+const focusNumberId = ref<number | null>(null)
+const focusNumber = computed(() =>
+  focusNumberId.value == null
+    ? null
+    : (routines.value.find((r) => r.id === focusNumberId.value) ?? null),
+)
+function openNumberDrawer(id: number) {
+  focusStudentId.value = null // only one drawer open at a time
+  focusNumberId.value = id
+}
+function arrangeNumber(id: number) {
+  focusNumberId.value = null
+  openNumber(id)
+}
+// Cast members of the focused number who quick-change in/out of it.
+const focusNumberConflictNames = computed(() => {
+  const rid = focusNumberId.value
+  if (rid == null) return [] as string[]
+  const names: string[] = []
+  for (const sid of castOf(rid)) {
+    if (conflictsByStudent.value.get(sid)?.has(rid)) {
+      const s = studentMap.value.get(sid)
+      if (s) names.push(`${s.firstName} ${s.lastName}`)
+    }
+  }
+  return names.sort()
+})
+// Opening the dancer drawer closes the number drawer.
+watch(focusStudentId, (v) => {
+  if (v != null) focusNumberId.value = null
+})
+
+// --- Column hover highlight (read a number's cast down a tall grid) ---
+const hoveredNumberId = ref<number | null>(null)
 </script>
 
 <template>
@@ -742,11 +807,40 @@ function openNumber(routineId: number) {
               <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </label>
+          <label class="min-w-[10rem] space-y-1">
+            <span class="text-xs text-muted-foreground">Costume</span>
+            <input
+              v-model="selectedRoutine.costumeLabel"
+              placeholder="e.g. Red velvet dress"
+              title="Numbers with the same costume won't flag a quick change back-to-back"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="renameNumber(selectedRoutine)"
+            />
+          </label>
           <button
             class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             @click="deleteNumber(selectedRoutine)"
           >
             <Trash2 class="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
+
+        <!-- Click-to-reuse an existing costume (avoids retyping / typos) -->
+        <div v-if="costumeLabels.length" class="-mt-2 mb-4 flex flex-wrap items-center gap-1">
+          <span class="text-[11px] text-muted-foreground">Costumes in use:</span>
+          <button
+            v-for="c in costumeLabels"
+            :key="c"
+            type="button"
+            class="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+            :class="
+              isSameCostumeLabel(selectedRoutine, c)
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border text-muted-foreground hover:bg-accent'
+            "
+            @click="setCostume(selectedRoutine, c)"
+          >
+            {{ c }}
           </button>
         </div>
 
@@ -941,7 +1035,7 @@ function openNumber(routineId: number) {
 
         <!-- Matrix -->
         <div class="overflow-x-auto rounded-lg border border-border">
-          <table class="border-collapse text-xs">
+          <table class="border-collapse text-xs" @mouseleave="hoveredNumberId = null">
             <thead>
               <!-- group header row -->
               <tr>
@@ -965,12 +1059,14 @@ function openNumber(routineId: number) {
                 <th
                   v-for="n in flatNumbers"
                   :key="n.id"
-                  class="h-28 w-8 border-b border-l border-border bg-muted/40 align-bottom"
+                  class="h-28 w-8 border-b border-l border-border align-bottom transition-colors"
+                  :class="hoveredNumberId === n.id ? 'bg-primary/10' : 'bg-muted/40'"
                   :title="n.songTitle || 'Untitled number'"
+                  @mouseenter="hoveredNumberId = n.id"
                 >
                   <button
                     class="flex h-full w-full flex-col items-center justify-end gap-1 pb-1 hover:bg-accent"
-                    @click="openNumber(n.id)"
+                    @click="openNumberDrawer(n.id)"
                   >
                     <span
                       class="max-h-24 truncate font-medium [writing-mode:vertical-rl]"
@@ -1030,7 +1126,9 @@ function openNumber(routineId: number) {
                   <td
                     v-for="n in flatNumbers"
                     :key="n.id"
-                    class="cursor-pointer border-b border-l border-border p-0 text-center hover:bg-accent"
+                    class="cursor-pointer border-b border-l border-border p-0 text-center transition-colors hover:bg-accent"
+                    :class="hoveredNumberId === n.id ? 'bg-primary/5' : ''"
+                    @mouseenter="hoveredNumberId = n.id"
                     @click="toggleCast(n.id, st.id)"
                   >
                     <span
@@ -1059,10 +1157,11 @@ function openNumber(routineId: number) {
           <p v-if="showProgram.length === 0" class="mt-2 text-xs text-muted-foreground">
             Set a running order in
             <RouterLink to="/recital" class="underline">Show order</RouterLink>
-            to see back-to-back conflicts here.
+            to see back-to-back costume changes here.
           </p>
           <p v-else-if="quickChangeList.length === 0" class="mt-2 text-xs text-muted-foreground">
-            No back-to-back conflicts in the current running order. 🎉
+            No costume changes flagged. A quick change only shows when two back-to-back numbers
+            have <em>different</em> costume labels — set a Costume on each number to track this.
           </p>
           <div v-else class="mt-2 space-y-1">
             <div v-for="(qc, i) in quickChangeList" :key="i" class="text-xs leading-relaxed">
@@ -1162,5 +1261,105 @@ function openNumber(routineId: number) {
         </div>
       </div>
     </div>
+
+    <!-- ===================== NUMBER DETAIL DRAWER ===================== -->
+    <div
+      v-if="focusNumber"
+      class="fixed inset-0 z-50 flex justify-end bg-black/30"
+      @click.self="focusNumberId = null"
+    >
+      <div class="flex h-full w-full max-w-sm flex-col border-l border-border bg-background shadow-xl">
+        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold">
+              {{ focusNumber.songTitle || 'Untitled number' }}
+            </p>
+            <p class="text-xs text-muted-foreground">
+              {{ groupNameOf(focusNumber.classId) }} · {{ castOf(focusNumber.id).size }} cast
+            </p>
+          </div>
+          <button
+            class="rounded p-1.5 text-muted-foreground hover:bg-accent"
+            aria-label="Close"
+            @click="focusNumberId = null"
+          >
+            <X class="h-4 w-4" />
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+          <div
+            v-if="focusNumberConflictNames.length > 0"
+            class="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400"
+          >
+            <p class="inline-flex items-center gap-1.5 font-semibold">
+              <AlertTriangle class="h-3.5 w-3.5" /> Quick change
+            </p>
+            <p class="mt-0.5">Cast here and in a back-to-back number: {{ focusNumberConflictNames.join(', ') }}.</p>
+          </div>
+
+          <label class="mb-2 block space-y-1">
+            <span class="text-xs font-medium text-muted-foreground">Costume</span>
+            <input
+              v-model="focusNumber.costumeLabel"
+              placeholder="e.g. Red velvet dress"
+              class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              @change="renameNumber(focusNumber)"
+            />
+          </label>
+          <div v-if="costumeLabels.length" class="mb-4 flex flex-wrap items-center gap-1">
+            <span class="text-[11px] text-muted-foreground">In use:</span>
+            <button
+              v-for="c in costumeLabels"
+              :key="c"
+              type="button"
+              class="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+              :class="
+                isSameCostumeLabel(focusNumber, c)
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border text-muted-foreground hover:bg-accent'
+              "
+              @click="setCostume(focusNumber, c)"
+            >
+              {{ c }}
+            </button>
+          </div>
+
+          <button
+            class="mb-4 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+            @click="arrangeNumber(focusNumber.id)"
+          >
+            <ListMusic class="h-3.5 w-3.5" /> Open in Plan to arrange formations
+          </button>
+
+          <p class="mb-2 text-xs font-medium text-muted-foreground">
+            Tap a dancer to add or remove them from this number
+          </p>
+          <div class="space-y-3">
+            <div v-for="rg in rowGroupsAll" :key="rg.key">
+              <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {{ rg.name }}
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="s in rg.students"
+                  :key="s.id"
+                  class="rounded-full border px-2.5 py-0.5 text-xs transition-colors"
+                  :class="
+                    castOf(focusNumber.id).has(s.id)
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  "
+                  @click="toggleCast(focusNumber.id, s.id)"
+                >
+                  {{ s.firstName }} {{ s.lastName }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>

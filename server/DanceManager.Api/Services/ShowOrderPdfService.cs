@@ -186,6 +186,8 @@ public class ShowOrderPdfService
         Dictionary<int, HashSet<int>> castByRoutine,
         Dictionary<int, string> studentName)
     {
+        // Only flag a quick change with definitive data: both numbers costumed and different.
+        if (!CostumeChanges(a, b)) return new();
         var setA = StudentSet(a, participatingByClass, castByRoutine);
         var setB = StudentSet(b, participatingByClass, castByRoutine);
         if (setA.Count == 0 || setB.Count == 0) return new();
@@ -193,6 +195,19 @@ public class ShowOrderPdfService
             .Select(id => studentName.TryGetValue(id, out var n) ? n : $"#{id}")
             .OrderBy(n => n)
             .ToList();
+    }
+
+    /// <summary>
+    /// True only with definitive data: both numbers are routine-linked, both have a
+    /// costume label, and the labels differ — i.e. a real costume change. Unlabeled
+    /// numbers never flag.
+    /// </summary>
+    private static bool CostumeChanges(ShowProgram a, ShowProgram b)
+    {
+        var ca = a.Routine?.CostumeLabel?.Trim();
+        var cb = b.Routine?.CostumeLabel?.Trim();
+        return !string.IsNullOrEmpty(ca) && !string.IsNullOrEmpty(cb)
+            && !string.Equals(ca, cb, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Dancers in a number: the routine's explicit cast if any, else the class's

@@ -76,6 +76,8 @@ export interface Routine {
   artist?: string | null
   videoUrl?: string | null
   choreographyNotes?: string | null
+  /** Costume worn in this number; adjacent numbers sharing a label need no quick change. */
+  costumeLabel?: string | null
 }
 
 export interface Formation {
