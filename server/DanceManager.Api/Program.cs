@@ -41,6 +41,8 @@ builder.Services.AddScoped<SubHandoffPdfService>();
 builder.Services.AddScoped<CostumePdfService>();
 // PDF generation for the recital show order.
 builder.Services.AddScoped<ShowOrderPdfService>();
+// PDF generation for the musical cast sheets (cast list / dancer schedules).
+builder.Services.AddScoped<CastSheetPdfService>();
 // Outbound fetching of external costume-photo URLs to embed in the costume PDF.
 // Redirects are disabled so a public URL can't 302 to an internal IP and slip
 // past ImageFetchService's host allow-check (redirect-based SSRF).

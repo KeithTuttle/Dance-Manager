@@ -27,6 +27,8 @@ import {
   Settings,
   UserX,
   X,
+  FileDown,
+  Search,
 } from 'lucide-vue-next'
 import FormationEditor from '@/components/FormationEditor.vue'
 
@@ -229,6 +231,77 @@ const matrixRows = computed(() =>
 const uncastStudents = computed(() =>
   [...students.value].sort(byName).filter((s) => countOf(s.id) === 0),
 )
+
+// --- Dancer search (highlights matching rows in the overview) ---
+const dancerSearch = ref('')
+const searchMatches = computed<Set<number> | null>(() => {
+  const q = dancerSearch.value.trim().toLowerCase()
+  if (!q) return null
+  const set = new Set<number>()
+  for (const s of students.value)
+    if (`${s.firstName} ${s.lastName}`.toLowerCase().includes(q)) set.add(s.id)
+  return set
+})
+function isSearchMatch(id: number): boolean {
+  return searchMatches.value?.has(id) ?? false
+}
+function isDimmed(id: number): boolean {
+  return searchMatches.value != null && !searchMatches.value.has(id)
+}
+
+// --- Quick-change conflicts: adjacent numbers (running order) sharing dancers ---
+const quickChangeList = computed(() => {
+  const groups: ShowProgram[][] = []
+  for (const sec of [...showSections.value].sort((a, b) => a.orderIndex - b.orderIndex))
+    groups.push(showProgram.value.filter((p) => p.sectionId === sec.id).sort(byPos))
+  groups.push(showProgram.value.filter((p) => p.sectionId == null).sort(byPos))
+  const label = (e: ShowProgram) =>
+    e.routineId != null ? numberTitleOf(e.routineId) : e.title || 'Guest number'
+  const out: { a: string; b: string; dancers: string[] }[] = []
+  for (const g of groups) {
+    for (let i = 0; i < g.length - 1; i++) {
+      const sa = entryDancers(g[i])
+      const sb = entryDancers(g[i + 1])
+      if (sa.size === 0 || sb.size === 0) continue
+      const shared = [...sa].filter((id) => sb.has(id))
+      if (shared.length === 0) continue
+      out.push({
+        a: label(g[i]),
+        b: label(g[i + 1]),
+        dancers: shared
+          .map((id) => {
+            const s = studentMap.value.get(id)
+            return s ? `${s.firstName} ${s.lastName}` : `#${id}`
+          })
+          .sort(),
+      })
+    }
+  }
+  return out
+})
+
+// --- Printable cast sheets (PDF) ---
+async function downloadCastSheet(mode: 'number' | 'dancer') {
+  const studioId = studioStore.selectedStudioId
+  if (studioId == null) return
+  try {
+    const res = await api.get('/castsheets', {
+      params: { studioId, mode },
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = mode === 'dancer' ? 'dancer-schedules.pdf' : 'cast-list.pdf'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    toast.error('Couldn’t generate the PDF.')
+  }
+}
 
 function numberTitleOf(id: number): string {
   const r = routines.value.find((x) => x.id === id)
@@ -530,6 +603,26 @@ function openNumber(routineId: number) {
               <LayoutGrid class="h-4 w-4" /> Cast overview
             </button>
           </div>
+          <button
+            v-if="classes.length > 0"
+            class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+            :disabled="routines.length === 0"
+            title="Cast list — every number with its dancers, in running order"
+            @click="downloadCastSheet('number')"
+          >
+            <FileDown class="h-4 w-4" />
+            Cast list
+          </button>
+          <button
+            v-if="classes.length > 0"
+            class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+            :disabled="routines.length === 0"
+            title="Dancer schedules — each dancer and the numbers they're in"
+            @click="downloadCastSheet('dancer')"
+          >
+            <FileDown class="h-4 w-4" />
+            Dancer sheets
+          </button>
           <RouterLink
             to="/recital"
             class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
@@ -810,6 +903,14 @@ function openNumber(routineId: number) {
               {{ rg.name }}
             </button>
           </div>
+          <div class="ml-auto inline-flex items-center gap-1.5">
+            <Search class="h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              v-model="dancerSearch"
+              placeholder="Find a dancer…"
+              class="w-44 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
         </div>
 
         <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -880,7 +981,15 @@ function openNumber(routineId: number) {
                     {{ sec.name }}
                   </td>
                 </tr>
-                <tr v-for="st in sec.students" :key="`${sec.key}-${st.id}`" class="hover:bg-accent/40">
+                <tr
+                  v-for="st in sec.students"
+                  :key="`${sec.key}-${st.id}`"
+                  class="transition-colors"
+                  :class="[
+                    isSearchMatch(st.id) ? 'bg-primary/10' : 'hover:bg-accent/40',
+                    isDimmed(st.id) ? 'opacity-40' : '',
+                  ]"
+                >
                   <th
                     class="sticky left-0 z-10 border-b border-r border-border bg-background px-2 py-1 text-left font-normal"
                   >
@@ -926,6 +1035,35 @@ function openNumber(routineId: number) {
         <p v-if="matrixRows.length === 0" class="mt-2 text-xs text-muted-foreground">
           All groups are hidden — tap a group chip above to show dancers.
         </p>
+
+        <!-- Quick-change conflicts (back-to-back in the running order) -->
+        <details class="mt-4 rounded-md border border-border bg-muted/20 p-3" open>
+          <summary class="cursor-pointer select-none text-sm font-medium">
+            <span class="inline-flex items-center gap-1.5">
+              <AlertTriangle class="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Quick changes ({{ quickChangeList.length }})
+            </span>
+          </summary>
+          <p v-if="showProgram.length === 0" class="mt-2 text-xs text-muted-foreground">
+            Set a running order in
+            <RouterLink to="/recital" class="underline">Show order</RouterLink>
+            to see back-to-back conflicts here.
+          </p>
+          <p v-else-if="quickChangeList.length === 0" class="mt-2 text-xs text-muted-foreground">
+            No back-to-back conflicts in the current running order. 🎉
+          </p>
+          <div v-else class="mt-2 space-y-1">
+            <div v-for="(qc, i) in quickChangeList" :key="i" class="text-xs leading-relaxed">
+              <span class="font-medium">{{ qc.a }}</span>
+              <span class="text-muted-foreground"> → </span>
+              <span class="font-medium">{{ qc.b }}</span>
+              <span class="text-muted-foreground">
+                — {{ qc.dancers.join(', ') }}
+                ({{ qc.dancers.length }} dancer{{ qc.dancers.length === 1 ? '' : 's' }})
+              </span>
+            </div>
+          </div>
+        </details>
 
         <!-- Not yet cast -->
         <div
