@@ -811,7 +811,6 @@ const hoveredNumberId = ref<number | null>(null)
             <span class="text-xs text-muted-foreground">Costume</span>
             <input
               v-model="selectedRoutine.costumeLabel"
-              list="mp-costume-labels"
               placeholder="e.g. Red velvet dress"
               title="Numbers with the same costume won't flag a quick change back-to-back"
               class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -1303,7 +1302,6 @@ const hoveredNumberId = ref<number | null>(null)
             <span class="text-xs font-medium text-muted-foreground">Costume</span>
             <input
               v-model="focusNumber.costumeLabel"
-              list="mp-costume-labels"
               placeholder="e.g. Red velvet dress"
               class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               @change="renameNumber(focusNumber)"
@@ -1363,9 +1361,5 @@ const hoveredNumberId = ref<number | null>(null)
       </div>
     </div>
 
-    <!-- Costume label suggestions (reused across numbers), available in any view -->
-    <datalist id="mp-costume-labels">
-      <option v-for="c in costumeLabels" :key="c" :value="c" />
-    </datalist>
   </div>
 </template>
