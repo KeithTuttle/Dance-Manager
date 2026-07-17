@@ -145,8 +145,51 @@ function hasConflict(id: number): boolean {
 }
 
 // --- Overview matrix shape ---
-// Columns: numbers grouped by home group (skip empty groups).
-const matrixColumns = computed(() => numbersByGroup.value.filter((g) => g.numbers.length > 0))
+// Columns (numbers) can be ordered two ways: by the show's running order
+// (default) or by home group. Rows are dancers grouped by enrolled group.
+type ColumnMode = 'running' | 'group'
+const columnMode = ref<ColumnMode>('running')
+
+type ColumnGroup = { key: string; label: string; numbers: Routine[] }
+
+// Columns grouped by home group (skip empty groups).
+const groupColumns = computed<ColumnGroup[]>(() =>
+  numbersByGroup.value
+    .filter((g) => g.numbers.length > 0)
+    .map((g) => ({ key: `g${g.group.id}`, label: g.group.name, numbers: g.numbers })),
+)
+
+// Columns in the show's running order, grouped by section (act); any numbers
+// not yet placed in the show order are collected under a trailing group.
+const runningColumns = computed<ColumnGroup[]>(() => {
+  const routineById = new Map(routines.value.map((r) => [r.id, r]))
+  const used = new Set<number>()
+  const cols: ColumnGroup[] = []
+  const addSection = (key: string, label: string, entries: ShowProgram[]) => {
+    const nums: Routine[] = []
+    for (const e of [...entries].sort(byPos)) {
+      if (e.routineId == null) continue
+      const r = routineById.get(e.routineId)
+      if (r && !used.has(r.id)) {
+        used.add(r.id)
+        nums.push(r)
+      }
+    }
+    if (nums.length) cols.push({ key, label, numbers: nums })
+  }
+  for (const sec of [...showSections.value].sort((a, b) => a.orderIndex - b.orderIndex))
+    addSection(`sec${sec.id}`, sec.name, showProgram.value.filter((p) => p.sectionId === sec.id))
+  addSection('sec-unassigned', 'Unassigned', showProgram.value.filter((p) => p.sectionId == null))
+  const rest = routines.value
+    .filter((r) => !used.has(r.id))
+    .sort((a, b) => (a.songTitle || '').localeCompare(b.songTitle || ''))
+  if (rest.length) cols.push({ key: 'unscheduled', label: 'Not in show order', numbers: rest })
+  return cols
+})
+
+const matrixColumns = computed<ColumnGroup[]>(() =>
+  columnMode.value === 'running' ? runningColumns.value : groupColumns.value,
+)
 const flatNumbers = computed(() => matrixColumns.value.flatMap((g) => g.numbers))
 
 // Rows: dancers grouped by their enrolled group, then an "Ungrouped" bucket.
@@ -158,16 +201,30 @@ const groupedStudentIds = computed(() => {
 const ungroupedStudents = computed(() =>
   students.value.filter((s) => !groupedStudentIds.value.has(s.id)),
 )
-const matrixRows = computed(() => {
-  const secs = sortedClasses.value.map((c) => ({
+type RowGroup = { key: string; id: number | null; name: string; students: Student[] }
+// All non-empty dancer groups (drive the filter chips), before hiding is applied.
+const rowGroupsAll = computed<RowGroup[]>(() => {
+  const secs: RowGroup[] = sortedClasses.value.map((c) => ({
+    key: `g${c.id}`,
     id: c.id as number | null,
     name: c.name,
     students: [...(groupRosters.value[c.id] ?? [])].sort(byName),
   }))
   const ung = [...ungroupedStudents.value].sort(byName)
-  if (ung.length) secs.push({ id: null, name: 'Ungrouped', students: ung })
+  if (ung.length) secs.push({ key: 'ungrouped', id: null, name: 'Ungrouped', students: ung })
   return secs.filter((s) => s.students.length > 0)
 })
+// Row-group visibility filter (empty set = show all).
+const hiddenRowGroups = ref<Set<string>>(new Set())
+function toggleRowGroup(key: string) {
+  const next = new Set(hiddenRowGroups.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  hiddenRowGroups.value = next
+}
+const matrixRows = computed(() =>
+  rowGroupsAll.value.filter((s) => !hiddenRowGroups.value.has(s.key)),
+)
 // Dancers in the studio not cast in anything.
 const uncastStudents = computed(() =>
   [...students.value].sort(byName).filter((s) => countOf(s.id) === 0),
@@ -716,6 +773,45 @@ function openNumber(routineId: number) {
       </div>
 
       <template v-else>
+        <!-- Controls: column ordering + dancer-group filter -->
+        <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div class="inline-flex items-center gap-1.5">
+            <span class="text-xs text-muted-foreground">Numbers:</span>
+            <div class="inline-flex rounded-md border border-border p-0.5">
+              <button
+                class="rounded px-2 py-0.5 text-xs transition-colors"
+                :class="columnMode === 'running' ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent'"
+                @click="columnMode = 'running'"
+              >
+                Running order
+              </button>
+              <button
+                class="rounded px-2 py-0.5 text-xs transition-colors"
+                :class="columnMode === 'group' ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent'"
+                @click="columnMode = 'group'"
+              >
+                By group
+              </button>
+            </div>
+          </div>
+          <div v-if="rowGroupsAll.length > 1" class="inline-flex flex-wrap items-center gap-1.5">
+            <span class="text-xs text-muted-foreground">Groups:</span>
+            <button
+              v-for="rg in rowGroupsAll"
+              :key="rg.key"
+              class="rounded-full border px-2 py-0.5 text-xs transition-colors"
+              :class="
+                hiddenRowGroups.has(rg.key)
+                  ? 'border-border text-muted-foreground/50 line-through'
+                  : 'border-foreground bg-foreground text-background'
+              "
+              @click="toggleRowGroup(rg.key)"
+            >
+              {{ rg.name }}
+            </button>
+          </div>
+        </div>
+
         <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span class="inline-flex items-center gap-1.5">
             <span class="inline-block h-2.5 w-2.5 rounded-full" style="background: #64748b" /> in a number
@@ -739,11 +835,11 @@ function openNumber(routineId: number) {
                 <th class="sticky left-0 z-10 border-b border-r border-border bg-muted/40 p-2"></th>
                 <th
                   v-for="g in matrixColumns"
-                  :key="g.group.id"
+                  :key="g.key"
                   :colspan="g.numbers.length"
                   class="border-b border-l border-border bg-muted/40 px-2 py-1 text-center font-semibold"
                 >
-                  {{ g.group.name }}
+                  {{ g.label }}
                 </th>
               </tr>
               <!-- number title row -->
@@ -775,7 +871,7 @@ function openNumber(routineId: number) {
               </tr>
             </thead>
             <tbody>
-              <template v-for="sec in matrixRows" :key="sec.id ?? 'ungrouped'">
+              <template v-for="sec in matrixRows" :key="sec.key">
                 <tr>
                   <td
                     :colspan="flatNumbers.length + 1"
@@ -784,7 +880,7 @@ function openNumber(routineId: number) {
                     {{ sec.name }}
                   </td>
                 </tr>
-                <tr v-for="st in sec.students" :key="`${sec.id}-${st.id}`" class="hover:bg-accent/40">
+                <tr v-for="st in sec.students" :key="`${sec.key}-${st.id}`" class="hover:bg-accent/40">
                   <th
                     class="sticky left-0 z-10 border-b border-r border-border bg-background px-2 py-1 text-left font-normal"
                   >
@@ -827,6 +923,9 @@ function openNumber(routineId: number) {
             </tbody>
           </table>
         </div>
+        <p v-if="matrixRows.length === 0" class="mt-2 text-xs text-muted-foreground">
+          All groups are hidden — tap a group chip above to show dancers.
+        </p>
 
         <!-- Not yet cast -->
         <div
