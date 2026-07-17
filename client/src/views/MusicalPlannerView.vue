@@ -29,6 +29,7 @@ import {
   X,
   FileDown,
   Search,
+  ChevronDown,
 } from 'lucide-vue-next'
 import FormationEditor from '@/components/FormationEditor.vue'
 
@@ -498,6 +499,8 @@ function toggleCast(routineId: number, studentId: number) {
 
 const bulkGroupId = ref<number | null>(null)
 const copyFromId = ref<number | null>(null)
+// Collapsed by default so the cast panel stays out of the way until you edit it.
+const castExpanded = ref(false)
 
 async function addGroupToNumber() {
   const routineId = selectedRoutineId.value
@@ -747,18 +750,27 @@ function openNumber(routineId: number) {
           </button>
         </div>
 
-        <!-- Cast editor -->
-        <div class="mb-5 space-y-2.5 rounded-md border border-border bg-muted/30 p-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="inline-flex items-center gap-1.5 text-sm font-medium">
-              <Users class="h-4 w-4" />
-              Cast
-              <span class="text-xs font-normal text-muted-foreground">
-                ({{ selectedCast.size }} cast) — pick anyone, across groups
-              </span>
-            </p>
+        <!-- Cast editor (collapsible) -->
+        <div class="mb-5 rounded-md border border-border bg-muted/30 p-3">
+          <button
+            class="flex w-full items-center gap-1.5 text-left text-sm font-medium"
+            @click="castExpanded = !castExpanded"
+          >
+            <ChevronDown
+              class="h-4 w-4 shrink-0 text-muted-foreground transition-transform"
+              :class="{ '-rotate-90': !castExpanded }"
+            />
+            <Users class="h-4 w-4" />
+            Cast
+            <span class="text-xs font-normal text-muted-foreground">({{ selectedCast.size }} cast)</span>
+            <span class="ml-auto text-xs font-normal text-muted-foreground">{{
+              castExpanded ? 'Hide' : 'Edit'
+            }}</span>
+          </button>
+
+          <div v-show="castExpanded" class="mt-2.5 space-y-2.5">
             <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
-              Filter
+              Filter roster
               <select
                 v-model="rosterFilterClassId"
                 class="rounded-md border border-border bg-background px-2 py-1 text-xs"
@@ -767,10 +779,9 @@ function openNumber(routineId: number) {
                 <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </label>
-          </div>
 
-          <!-- Bulk actions -->
-          <div class="flex flex-wrap items-center gap-1.5 border-y border-border/60 py-2">
+            <!-- Bulk actions -->
+            <div class="flex flex-wrap items-center gap-1.5 border-y border-border/60 py-2">
             <select
               v-model="bulkGroupId"
               class="rounded-md border border-border bg-background px-2 py-1 text-xs"
@@ -831,10 +842,11 @@ function openNumber(routineId: number) {
               {{ s.firstName }} {{ s.lastName }}
             </button>
           </div>
-          <p class="text-[11px] text-muted-foreground">
-            Cast overrides group participation for this number's formations and back-to-back quick
-            changes.
-          </p>
+            <p class="text-[11px] text-muted-foreground">
+              Cast overrides group participation for this number's formations and back-to-back quick
+              changes.
+            </p>
+          </div>
         </div>
 
         <!-- Formation editor driven by the cast -->
