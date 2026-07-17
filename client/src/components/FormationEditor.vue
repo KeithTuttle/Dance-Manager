@@ -224,7 +224,11 @@ async function probeAiConfig() {
     const { data } = await api.post('/formations/suggest', { dancers: [], description: '' })
     aiConfigured.value = data?.configured !== false
   } catch {
-    aiConfigured.value = false
+    // A failed probe (e.g. the auth token isn't attached yet on first mount, or a
+    // transient network error) must NOT hide the AI box — only an explicit
+    // configured:false from the server should. Leave it visible; if the key really
+    // is missing, an actual Suggest call reports it and flips this off then.
+    aiConfigured.value = true
   }
 }
 
