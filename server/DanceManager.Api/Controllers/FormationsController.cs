@@ -1,5 +1,6 @@
 using DanceManager.Api.Data;
 using DanceManager.Api.Models;
+using DanceManager.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,8 +11,30 @@ namespace DanceManager.Api.Controllers;
 public class FormationsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly FormationAiService _ai;
 
-    public FormationsController(AppDbContext db) => _db = db;
+    public FormationsController(AppDbContext db, FormationAiService ai)
+    {
+        _db = db;
+        _ai = ai;
+    }
+
+    public record SuggestRequest(List<FormationDancer> Dancers, string? Description);
+
+    // POST /api/formations/suggest — AI-suggest positions for a set of dancers.
+    // Stateless: returns a {studentId: {x,y}} map the client applies + saves via PUT.
+    [HttpPost("suggest")]
+    public async Task<IActionResult> Suggest(SuggestRequest input)
+    {
+        var dancers = input.Dancers ?? new List<FormationDancer>();
+        var result = await _ai.SuggestAsync(dancers, input.Description, HttpContext.RequestAborted);
+        return Ok(new
+        {
+            configured = result.Configured,
+            ok = result.Ok,
+            coordinates = result.Coordinates, // keyed by studentId -> {x,y}
+        });
+    }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Formation>>> GetAll([FromQuery] int? routineId)
