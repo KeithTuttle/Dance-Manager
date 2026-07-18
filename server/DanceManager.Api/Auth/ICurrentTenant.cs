@@ -10,9 +10,14 @@ namespace DanceManager.Api.Auth;
 public interface ICurrentTenant
 {
     int? TenantId { get; set; }
+
+    /// <summary>The caller's membership role in the tenant; null when unresolved
+    /// (anonymous requests, or auth disabled in local dev).</summary>
+    Models.MembershipRole? Role { get; set; }
 }
 
 public sealed class CurrentTenant : ICurrentTenant
 {
     public int? TenantId { get; set; }
+    public Models.MembershipRole? Role { get; set; }
 }

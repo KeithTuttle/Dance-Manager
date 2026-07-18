@@ -13,6 +13,34 @@ export interface Studio {
   address?: string | null
   payType: PayType
   payRate: number
+  /** Archived season: hidden from pickers, manageable in Settings → Studios. */
+  isArchived?: boolean
+}
+
+// --- Team (tenant membership + invites) ---
+export type MembershipRole = 'Owner' | 'Member'
+
+export interface TeamMember {
+  id: number
+  role: MembershipRole
+  email?: string | null
+  displayName?: string | null
+  isYou: boolean
+}
+
+export interface TeamInvitation {
+  id: number
+  code: string
+  email?: string | null
+  role: MembershipRole
+  createdAt: string
+}
+
+export interface TeamResponse {
+  tenantName: string
+  yourRole: MembershipRole
+  members: TeamMember[]
+  invitations: TeamInvitation[]
 }
 
 export interface DanceClass {

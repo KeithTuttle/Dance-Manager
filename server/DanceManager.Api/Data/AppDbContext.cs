@@ -16,6 +16,9 @@ public class AppDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Membership> Memberships => Set<Membership>();
 
+    // Team invites (tenant-scoped; redemption looks up by code with IgnoreQueryFilters).
+    public DbSet<Invitation> Invitations => Set<Invitation>();
+
     public DbSet<Studio> Studios => Set<Studio>();
     public DbSet<DanceClass> Classes => Set<DanceClass>();
     public DbSet<Student> Students => Set<Student>();
@@ -59,6 +62,7 @@ public class AppDbContext : DbContext
         b.Entity<AuditionCandidate>().Property(x => x.Decision).HasConversion<string>();
         b.Entity<StudentMilestoneStatus>().Property(x => x.Status).HasConversion<string>();
         b.Entity<Membership>().Property(x => x.Role).HasConversion<string>();
+        b.Entity<Invitation>().Property(x => x.Role).HasConversion<string>();
 
         // JSON columns (Postgres jsonb).
         b.Entity<Formation>().Property(x => x.StudentCoordinates).HasColumnType("jsonb");
@@ -73,6 +77,8 @@ public class AppDbContext : DbContext
 
         // One Clerk user maps to exactly one membership.
         b.Entity<Membership>().HasIndex(x => x.ClerkUserId).IsUnique();
+        // Join codes are redeemed by exact lookup and must be unique.
+        b.Entity<Invitation>().HasIndex(x => x.Code).IsUnique();
 
         // Prevent multiple cascade paths; keep deletes explicit for feature agents.
         b.Entity<AttendanceRecord>()

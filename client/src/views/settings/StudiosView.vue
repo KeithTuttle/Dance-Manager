@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Building2, Plus, Trash2, Rows3 } from 'lucide-vue-next'
+import { Building2, Plus, Trash2, Rows3, Archive, ArchiveRestore, FileDown, Loader2 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
 import { confirm } from '@/lib/confirm'
 import { toast } from '@/lib/toast'
@@ -23,11 +23,19 @@ const PAY_TYPES: PayType[] = ['Hourly', 'PerHeadcount']
 
 let tempId = -1
 
+// Archived seasons stay hidden unless toggled on.
+const showArchived = ref(false)
+const archivedCount = computed(() => studios.value.filter((s) => s.isArchived).length)
+const visibleStudios = computed(() =>
+  showArchived.value ? studios.value : studios.value.filter((s) => !s.isArchived),
+)
+
 // --- Loading -----------------------------------------------------------------
 async function loadStudios() {
   loading.value = true
   try {
-    const { data } = await api.get<Studio[]>('/studios')
+    // Settings manages archived seasons too, so fetch everything here.
+    const { data } = await api.get<Studio[]>('/studios', { params: { includeArchived: true } })
     studios.value = Array.isArray(data) ? data : []
     if (!studios.value.some((s) => s.id === selectedStudioId.value)) {
       selectedStudioId.value = studios.value[0]?.id ?? null
@@ -93,13 +101,50 @@ async function saveStudio(studio: Studio) {
   }
 }
 
+// --- Archive (seasons) -------------------------------------------------------
+async function toggleArchive(studio: Studio) {
+  if (studio.id < 0) return
+  studio.isArchived = !studio.isArchived
+  try {
+    await api.put(`/studios/${studio.id}`, studio)
+    await studioStore.fetchStudios() // pickers drop/regain it immediately
+    toast.success(studio.isArchived ? 'Studio archived' : 'Studio restored')
+  } catch {
+    studio.isArchived = !studio.isArchived // revert on failure
+  }
+}
+
+// --- Export ------------------------------------------------------------------
+const exporting = ref(false)
+async function exportData() {
+  exporting.value = true
+  try {
+    const res = await api.get('/export', { responseType: 'blob' })
+    const blob = new Blob([res.data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `dancemanager-export-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast.success('Export downloaded — keep it somewhere safe')
+  } catch {
+    toast.error('Couldn’t export your data.')
+  } finally {
+    exporting.value = false
+  }
+}
+
 async function deleteStudio(studio: Studio) {
   if (
     !(await confirm({
       title: `Delete “${studio.name}”?`,
-      message: 'This permanently removes the studio and everything tied to it (classes, students, routines, etc).',
+      message: 'This permanently removes the studio and everything tied to it (classes, students, routines, etc). Consider archiving instead, or exporting your data first.',
       confirmText: 'Delete',
       destructive: true,
+      requireText: studio.id < 0 ? undefined : studio.name,
     }))
   )
     return
@@ -173,23 +218,45 @@ onMounted(async () => {
 
 <template>
   <div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-    <header class="mb-6 border-b border-border pb-4">
-      <h1 class="text-xl font-semibold tracking-tight">Studios &amp; Classes</h1>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Manage studios and their classes. Deleting a studio removes everything tied to it.
-      </p>
+    <header class="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
+      <div>
+        <h1 class="text-xl font-semibold tracking-tight">Studios &amp; Classes</h1>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Manage studios and their classes. Deleting a studio removes everything tied to it.
+        </p>
+      </div>
+      <button
+        class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+        :disabled="exporting"
+        title="Download a backup of all your data as one JSON file"
+        @click="exportData"
+      >
+        <Loader2 v-if="exporting" class="h-3.5 w-3.5 animate-spin" />
+        <FileDown v-else class="h-3.5 w-3.5" />
+        Export data
+      </button>
     </header>
 
     <!-- Studios -->
     <section class="mb-8 rounded-lg border border-border">
-      <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <h2 class="text-sm font-semibold">Studios</h2>
-        <button
-          class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-          @click="addStudio"
-        >
-          <Plus class="h-3.5 w-3.5" /> Add studio
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="archivedCount > 0"
+            class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+            @click="showArchived = !showArchived"
+          >
+            <Archive class="h-3.5 w-3.5" />
+            {{ showArchived ? 'Hide' : 'Show' }} archived ({{ archivedCount }})
+          </button>
+          <button
+            class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+            @click="addStudio"
+          >
+            <Plus class="h-3.5 w-3.5" /> Add studio
+          </button>
+        </div>
       </div>
 
       <div v-if="loading" class="px-4 py-6 text-center text-sm text-muted-foreground">Loading…</div>
@@ -203,10 +270,13 @@ onMounted(async () => {
       </div>
       <div v-else class="divide-y divide-border">
         <div
-          v-for="s in studios"
+          v-for="s in visibleStudios"
           :key="s.id"
-          class="grid items-center gap-2 px-4 py-2.5 sm:grid-cols-[1.4fr_1.4fr_0.9fr_0.7fr_auto_auto]"
-          :class="s.id === selectedStudioId ? 'bg-accent/40' : ''"
+          class="grid items-center gap-2 px-4 py-2.5 sm:grid-cols-[1.4fr_1.4fr_0.9fr_0.7fr_auto_auto_auto]"
+          :class="[
+            s.id === selectedStudioId ? 'bg-accent/40' : '',
+            s.isArchived ? 'opacity-60' : '',
+          ]"
         >
           <input
             v-model="s.name"
@@ -244,6 +314,16 @@ onMounted(async () => {
             @click="selectStudioForClasses(s.id)"
           >
             <Rows3 class="h-3.5 w-3.5" /> Classes
+          </button>
+          <button
+            class="rounded p-1.5 text-muted-foreground hover:bg-accent"
+            :aria-label="s.isArchived ? 'Restore studio' : 'Archive studio'"
+            :title="s.isArchived ? 'Restore — show in pickers again' : 'Archive this season — hides it from pickers, keeps all data'"
+            :disabled="s.id < 0"
+            @click="toggleArchive(s)"
+          >
+            <ArchiveRestore v-if="s.isArchived" class="h-4 w-4" />
+            <Archive v-else class="h-4 w-4" />
           </button>
           <button
             class="justify-self-end rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

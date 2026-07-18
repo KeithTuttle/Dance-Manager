@@ -14,5 +14,10 @@ public class Membership
     public MembershipRole Role { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>Display fields captured from Clerk claims when available (claims are
+    /// optional on session tokens, so both may stay null).</summary>
+    public string? Email { get; set; }
+    public string? DisplayName { get; set; }
+
     public Tenant? Tenant { get; set; }
 }

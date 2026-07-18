@@ -42,12 +42,28 @@ public class TenantResolutionMiddleware
                         TenantId = tenant.Id,
                         ClerkUserId = clerkUserId,
                         Role = MembershipRole.Owner,
+                        Email = FindEmail(context.User),
+                        DisplayName = context.User.FindFirst("name")?.Value,
                     };
                     db.Memberships.Add(membership);
                     await db.SaveChangesAsync();
                 }
+                else if (membership.Email is null)
+                {
+                    // One-time backfill for memberships created before these fields
+                    // existed; a write happens only while the claim is available and
+                    // the field is still empty.
+                    var email = FindEmail(context.User);
+                    if (email is not null)
+                    {
+                        membership.Email = email;
+                        membership.DisplayName ??= context.User.FindFirst("name")?.Value;
+                        await db.SaveChangesAsync();
+                    }
+                }
 
                 currentTenant.TenantId = membership.TenantId;
+                currentTenant.Role = membership.Role;
             }
         }
 
@@ -56,9 +72,11 @@ public class TenantResolutionMiddleware
 
     private static string DeriveTenantName(System.Security.Claims.ClaimsPrincipal user)
     {
-        var name = user.FindFirst("name")?.Value
-            ?? user.FindFirst("email")?.Value
-            ?? user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var name = user.FindFirst("name")?.Value ?? FindEmail(user);
         return string.IsNullOrWhiteSpace(name) ? "My Studio" : $"{name}'s Studio";
     }
+
+    private static string? FindEmail(System.Security.Claims.ClaimsPrincipal user) =>
+        user.FindFirst("email")?.Value
+        ?? user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
 }

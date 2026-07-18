@@ -13,9 +13,16 @@ public class StudiosController : ControllerBase
 
     public StudiosController(AppDbContext db) => _db = db;
 
+    // GET /api/studios — active studios only, unless ?includeArchived=true
+    // (Settings uses that to manage archived seasons; pickers stay clean).
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Studio>>> GetAll() =>
-        await _db.Studios.OrderBy(s => s.Name).ToListAsync();
+    public async Task<ActionResult<IEnumerable<Studio>>> GetAll([FromQuery] bool includeArchived = false)
+    {
+        var query = _db.Studios.AsQueryable();
+        if (!includeArchived)
+            query = query.Where(s => !s.IsArchived);
+        return await query.OrderBy(s => s.Name).ToListAsync();
+    }
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<Studio>> Get(int id)
