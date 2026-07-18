@@ -51,6 +51,8 @@ builder.Services.AddHttpClient(ImageFetchService.HttpClientName)
 builder.Services.AddScoped<ImageFetchService>();
 // AI formation suggestions via Google Gemini (free tier). Reuses AddHttpClient above.
 builder.Services.AddScoped<FormationAiService>();
+// Team-invite emails via Gmail SMTP.
+builder.Services.AddScoped<EmailService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o =>

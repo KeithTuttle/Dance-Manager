@@ -34,6 +34,9 @@ export interface TeamInvitation {
   email?: string | null
   role: MembershipRole
   createdAt: string
+  emailSent: boolean
+  /** Whether the server has Gmail sending configured at all. */
+  canEmail: boolean
 }
 
 export interface TeamResponse {

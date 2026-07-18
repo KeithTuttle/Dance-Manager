@@ -10,6 +10,8 @@ import {
   Trash2,
   LogIn,
   Crown,
+  Mail,
+  MailCheck,
 } from 'lucide-vue-next'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
@@ -80,16 +82,32 @@ async function save() {
 async function createInvite() {
   creatingInvite.value = true
   try {
-    await api.post<TeamInvitation>('/team/invitations', {
+    const { data } = await api.post<TeamInvitation>('/team/invitations', {
       email: inviteEmail.value.trim() || null,
     })
     inviteEmail.value = ''
     await loadTeam()
-    toast.success('Invite created — share the code with your teacher')
+    if (data.email && data.emailSent) toast.success(`Invite emailed to ${data.email}`)
+    else if (data.email) toast.success('Invite created — email it or share the code')
+    else toast.success('Invite created — share the code with your teacher')
   } catch {
     /* api.ts surfaces the error toast */
   } finally {
     creatingInvite.value = false
+  }
+}
+
+const sendingId = ref<number | null>(null)
+async function sendInviteEmail(inv: TeamInvitation) {
+  sendingId.value = inv.id
+  try {
+    await api.post(`/team/invitations/${inv.id}/send`)
+    await loadTeam()
+    toast.success(`Emailed ${inv.email}`)
+  } catch {
+    /* api.ts surfaces the error toast */
+  } finally {
+    sendingId.value = null
   }
 }
 
@@ -283,6 +301,24 @@ onMounted(load)
                 for {{ inv.email }}
               </span>
               <span v-else class="flex-1" />
+              <span
+                v-if="inv.email && inv.emailSent"
+                class="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                title="Invite email sent"
+              >
+                <MailCheck class="h-3.5 w-3.5" /> Sent
+              </span>
+              <button
+                v-if="inv.email && inv.canEmail"
+                class="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-50"
+                :aria-label="inv.emailSent ? 'Resend email' : 'Send email'"
+                :title="inv.emailSent ? 'Resend email' : 'Send email'"
+                :disabled="sendingId === inv.id"
+                @click="sendInviteEmail(inv)"
+              >
+                <Loader2 v-if="sendingId === inv.id" class="h-3.5 w-3.5 animate-spin" />
+                <Mail v-else class="h-3.5 w-3.5" />
+              </button>
               <button
                 class="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent"
                 aria-label="Copy code"

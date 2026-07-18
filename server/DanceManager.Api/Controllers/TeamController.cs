@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using DanceManager.Api.Auth;
 using DanceManager.Api.Data;
 using DanceManager.Api.Models;
+using DanceManager.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,15 +19,17 @@ public class TeamController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ICurrentTenant _tenant;
+    private readonly EmailService _email;
 
-    public TeamController(AppDbContext db, ICurrentTenant tenant)
+    public TeamController(AppDbContext db, ICurrentTenant tenant, EmailService email)
     {
         _db = db;
         _tenant = tenant;
+        _email = email;
     }
 
     public record MemberDto(int Id, string Role, string? Email, string? DisplayName, bool IsYou);
-    public record InvitationDto(int Id, string Code, string? Email, string Role, DateTimeOffset CreatedAt);
+    public record InvitationDto(int Id, string Code, string? Email, string Role, DateTimeOffset CreatedAt, bool EmailSent, bool CanEmail);
     public record TeamResponse(string TenantName, string YourRole, List<MemberDto> Members, List<InvitationDto> Invitations);
     public record CreateInviteRequest(string? Email);
     public record JoinRequest(string Code);
@@ -65,18 +68,22 @@ public class TeamController : ControllerBase
         var invites = new List<InvitationDto>();
         if (IsOwner)
         {
-            invites = await _db.Invitations
+            var rows = await _db.Invitations
                 .Where(i => i.AcceptedAt == null)
                 .OrderByDescending(i => i.CreatedAt)
-                .Select(i => new InvitationDto(i.Id, i.Code, i.Email, i.Role.ToString(), i.CreatedAt))
                 .ToListAsync();
+            invites = rows
+                .Select(i => new InvitationDto(
+                    i.Id, i.Code, i.Email, i.Role.ToString(), i.CreatedAt, i.EmailSentAt != null, _email.IsConfigured))
+                .ToList();
         }
 
         var yourRole = (_tenant.Role ?? MembershipRole.Owner).ToString();
         return new TeamResponse(tenantName, yourRole, memberDtos, invites);
     }
 
-    // POST /api/team/invitations — create a join-code invite (owners only).
+    // POST /api/team/invitations — create a join-code invite (owners only). Emails
+    // the code immediately when an address is given and Gmail is configured.
     [HttpPost("invitations")]
     public async Task<ActionResult<InvitationDto>> CreateInvite(CreateInviteRequest input)
     {
@@ -104,7 +111,46 @@ public class TeamController : ControllerBase
             }
         }
 
-        return new InvitationDto(invite.Id, invite.Code, invite.Email, invite.Role.ToString(), invite.CreatedAt);
+        if (invite.Email is not null)
+            await TrySendAsync(invite);
+
+        return new InvitationDto(
+            invite.Id, invite.Code, invite.Email, invite.Role.ToString(), invite.CreatedAt,
+            invite.EmailSentAt != null, _email.IsConfigured);
+    }
+
+    // POST /api/team/invitations/{id}/send — (re)send the invite email (owners only).
+    [HttpPost("invitations/{id:int}/send")]
+    public async Task<ActionResult<InvitationDto>> ResendInvite(int id)
+    {
+        if (!IsOwner) return StatusCode(403);
+        var invite = await _db.Invitations.FirstOrDefaultAsync(i => i.Id == id && i.AcceptedAt == null);
+        if (invite is null) return NotFound();
+        if (invite.Email is null) return BadRequest("This invite has no email address — copy the code instead.");
+
+        var sent = await TrySendAsync(invite);
+        if (!sent) return BadRequest(_email.IsConfigured
+            ? "Couldn’t send the email — check the server logs, or copy the code instead."
+            : "Email isn’t set up on the server yet — copy the code instead.");
+
+        return new InvitationDto(
+            invite.Id, invite.Code, invite.Email, invite.Role.ToString(), invite.CreatedAt,
+            invite.EmailSentAt != null, _email.IsConfigured);
+    }
+
+    private async Task<bool> TrySendAsync(Invitation invite)
+    {
+        var tenantName = await _db.Tenants
+            .Where(t => t.Id == invite.TenantId)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync() ?? "the team";
+        var sent = await _email.SendInviteEmailAsync(invite.Email!, tenantName, invite.Code);
+        if (sent)
+        {
+            invite.EmailSentAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+        return sent;
     }
 
     // DELETE /api/team/invitations/{id} — revoke a pending invite (owners only).

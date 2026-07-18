@@ -25,4 +25,8 @@ public class Invitation : ITenantScoped
     /// <summary>Set when redeemed; a redeemed invite cannot be used again.</summary>
     public DateTimeOffset? AcceptedAt { get; set; }
     public string? AcceptedByClerkUserId { get; set; }
+
+    /// <summary>Set when the invite email last sent successfully; null if never sent
+    /// or sending failed (e.g. no Email address, or Gmail isn't configured).</summary>
+    public DateTimeOffset? EmailSentAt { get; set; }
 }
