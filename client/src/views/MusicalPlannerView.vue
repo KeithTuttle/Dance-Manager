@@ -30,6 +30,7 @@ import {
   FileDown,
   Search,
   ChevronDown,
+  Shirt,
 } from 'lucide-vue-next'
 import FormationEditor from '@/components/FormationEditor.vue'
 
@@ -130,6 +131,53 @@ const costumeLabels = computed(() =>
     ),
   ].sort(),
 )
+
+// Stable color per costume label (case-insensitive), so identical costumes
+// visibly match across the overview grid and the costume summary.
+const COSTUME_PALETTE = [
+  '#2563eb', '#db2777', '#16a34a', '#f59e0b', '#8b5cf6',
+  '#0d9488', '#dc2626', '#0ea5e9', '#ca8a04', '#7c3aed',
+]
+const costumeColorMap = computed(() => {
+  const m = new Map<string, string>()
+  for (const l of costumeLabels.value) {
+    const k = l.toLowerCase()
+    if (!m.has(k)) m.set(k, COSTUME_PALETTE[m.size % COSTUME_PALETTE.length])
+  }
+  return m
+})
+function costumeColorOf(r: Routine | undefined | null): string | null {
+  const l = r?.costumeLabel?.trim().toLowerCase()
+  return l ? (costumeColorMap.value.get(l) ?? null) : null
+}
+
+// Costume summary: numbers grouped by costume label, plus an uncostumed bucket.
+const costumeSummary = computed(() => {
+  const byLabel = new Map<string, { label: string; color: string | null; numbers: Routine[] }>()
+  const none: Routine[] = []
+  for (const r of routines.value) {
+    const t = r.costumeLabel?.trim()
+    if (!t) {
+      none.push(r)
+      continue
+    }
+    const k = t.toLowerCase()
+    if (!byLabel.has(k))
+      byLabel.set(k, { label: t, color: costumeColorMap.value.get(k) ?? null, numbers: [] })
+    byLabel.get(k)!.numbers.push(r)
+  }
+  const byTitle = (a: Routine, b: Routine) => (a.songTitle || '').localeCompare(b.songTitle || '')
+  const groups = [...byLabel.values()].sort((a, b) => a.label.localeCompare(b.label))
+  for (const g of groups) g.numbers.sort(byTitle)
+  none.sort(byTitle)
+  return { groups, none }
+})
+// Union of dancers across every number wearing a costume.
+function costumeDancerCount(numbers: Routine[]): number {
+  const set = new Set<number>()
+  for (const r of numbers) for (const id of castOf(r.id)) set.add(id)
+  return set.size
+}
 // A quick change is only asserted with definitive data: BOTH adjacent numbers
 // have a costume label and they differ. Unlabeled numbers never flag.
 function costumeChanges(a: ShowProgram, b: ShowProgram): boolean {
@@ -639,6 +687,32 @@ watch(focusStudentId, (v) => {
 
 // --- Column hover highlight (read a number's cast down a tall grid) ---
 const hoveredNumberId = ref<number | null>(null)
+
+// --- Persisted view preferences ---------------------------------------------
+// The tab reopens the way you left it: Plan/Overview, column ordering, group
+// filter, and whether the cast panel is expanded.
+const PREFS_KEY = 'musicalPlanner.prefs'
+try {
+  const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}')
+  if (p.view === 'plan' || p.view === 'overview') view.value = p.view
+  if (p.columnMode === 'running' || p.columnMode === 'group') columnMode.value = p.columnMode
+  if (Array.isArray(p.hiddenRowGroups))
+    hiddenRowGroups.value = new Set(p.hiddenRowGroups.filter((k: unknown) => typeof k === 'string'))
+  if (typeof p.castExpanded === 'boolean') castExpanded.value = p.castExpanded
+} catch {
+  /* corrupt prefs — fall back to defaults */
+}
+watch([view, columnMode, hiddenRowGroups, castExpanded], () => {
+  localStorage.setItem(
+    PREFS_KEY,
+    JSON.stringify({
+      view: view.value,
+      columnMode: columnMode.value,
+      hiddenRowGroups: [...hiddenRowGroups.value],
+      castExpanded: castExpanded.value,
+    }),
+  )
+})
 </script>
 
 <template>
@@ -1078,6 +1152,32 @@ const hoveredNumberId = ref<number | null>(null)
                   </button>
                 </th>
               </tr>
+              <!-- costume row: same color = same costume; dashed = no costume set -->
+              <tr v-if="costumeLabels.length">
+                <th
+                  class="sticky left-0 z-10 border-b border-r border-border bg-muted/40 px-2 py-1 text-left font-normal text-muted-foreground"
+                >
+                  Costume
+                </th>
+                <th
+                  v-for="n in flatNumbers"
+                  :key="n.id"
+                  class="border-b border-l border-border py-1 transition-colors"
+                  :class="hoveredNumberId === n.id ? 'bg-primary/10' : 'bg-muted/40'"
+                  :title="n.costumeLabel?.trim() || 'No costume set'"
+                  @mouseenter="hoveredNumberId = n.id"
+                >
+                  <span
+                    v-if="costumeColorOf(n)"
+                    class="mx-auto block h-2.5 w-5 rounded-sm"
+                    :style="{ background: costumeColorOf(n)! }"
+                  />
+                  <span
+                    v-else
+                    class="mx-auto block h-2.5 w-5 rounded-sm border border-dashed border-muted-foreground/50"
+                  />
+                </th>
+              </tr>
             </thead>
             <tbody>
               <template v-for="sec in matrixRows" :key="sec.key">
@@ -1173,6 +1273,70 @@ const hoveredNumberId = ref<number | null>(null)
                 ({{ qc.dancers.length }} dancer{{ qc.dancers.length === 1 ? '' : 's' }})
               </span>
             </div>
+          </div>
+        </details>
+
+        <!-- Costume summary: every costume and the numbers wearing it -->
+        <details
+          v-if="costumeSummary.groups.length > 0 || costumeSummary.none.length > 0"
+          class="mt-4 rounded-md border border-border bg-muted/20 p-3"
+          open
+        >
+          <summary class="cursor-pointer select-none text-sm font-medium">
+            <span class="inline-flex items-center gap-1.5">
+              <Shirt class="h-4 w-4 text-muted-foreground" />
+              Costumes ({{ costumeSummary.groups.length }})
+            </span>
+          </summary>
+          <p
+            v-if="costumeSummary.groups.length === 0"
+            class="mt-2 text-xs text-muted-foreground"
+          >
+            No costumes set yet — add a Costume on a number (Plan tab or a number's drawer) to
+            track shared costumes and quick changes.
+          </p>
+          <div v-else class="mt-2 space-y-1.5">
+            <div
+              v-for="g in costumeSummary.groups"
+              :key="g.label"
+              class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs"
+            >
+              <span class="inline-flex items-center gap-1.5 font-medium">
+                <span
+                  class="inline-block h-2.5 w-5 rounded-sm"
+                  :style="{ background: g.color ?? '#94a3b8' }"
+                />
+                {{ g.label }}
+              </span>
+              <span class="text-muted-foreground">
+                {{ costumeDancerCount(g.numbers) }} dancer{{
+                  costumeDancerCount(g.numbers) === 1 ? '' : 's'
+                }}
+                ·
+              </span>
+              <button
+                v-for="r in g.numbers"
+                :key="r.id"
+                class="rounded-full border border-border px-2 py-0.5 text-muted-foreground hover:bg-accent"
+                @click="openNumberDrawer(r.id)"
+              >
+                {{ r.songTitle || 'Untitled' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="costumeSummary.none.length > 0" class="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+            <span class="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
+              <span class="inline-block h-2.5 w-5 rounded-sm border border-dashed border-muted-foreground/50" />
+              No costume set
+            </span>
+            <button
+              v-for="r in costumeSummary.none"
+              :key="r.id"
+              class="rounded-full border border-border px-2 py-0.5 text-muted-foreground hover:bg-accent"
+              @click="openNumberDrawer(r.id)"
+            >
+              {{ r.songTitle || 'Untitled' }}
+            </button>
           </div>
         </details>
 

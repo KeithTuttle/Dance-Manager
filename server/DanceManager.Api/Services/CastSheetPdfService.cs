@@ -194,8 +194,10 @@ public class CastSheetPdfService
                 {
                     info.Item().Text(TitleOf(n.Routine)).SemiBold().FontColor(Colors.Black);
                     var meta = n.Position is null ? $"{n.GroupName} · not in show order" : n.GroupName;
-                    info.Item().Text($"{meta}  ·  {n.DancerIds.Count} dancer{(n.DancerIds.Count == 1 ? "" : "s")}")
-                        .FontSize(9).FontColor(Colors.Grey.Medium);
+                    meta += $"  ·  {n.DancerIds.Count} dancer{(n.DancerIds.Count == 1 ? "" : "s")}";
+                    var costume = n.Routine.CostumeLabel?.Trim();
+                    if (!string.IsNullOrEmpty(costume)) meta += $"  ·  Costume: {costume}";
+                    info.Item().Text(meta).FontSize(9).FontColor(Colors.Grey.Medium);
                 });
             });
             var names = n.DancerIds
@@ -227,9 +229,16 @@ public class CastSheetPdfService
                     }
                     else
                     {
-                        var parts = nums.Select(n => n.Position is null
-                            ? $"{TitleOf(n.Routine)} (unscheduled)"
-                            : $"#{n.Position} {TitleOf(n.Routine)}");
+                        // Include the costume per number so the sheet doubles as the
+                        // dancer's changing plan for the night.
+                        var parts = nums.Select(n =>
+                        {
+                            var t = n.Position is null
+                                ? $"{TitleOf(n.Routine)} (unscheduled)"
+                                : $"#{n.Position} {TitleOf(n.Routine)}";
+                            var costume = n.Routine.CostumeLabel?.Trim();
+                            return string.IsNullOrEmpty(costume) ? t : $"{t} — {costume}";
+                        });
                         row.RelativeItem().Text($"{nums.Count}:  " + string.Join("  ·  ", parts))
                             .FontSize(9.5f).FontColor(Colors.Grey.Darken2);
                     }
