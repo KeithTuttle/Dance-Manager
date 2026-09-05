@@ -184,6 +184,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors(CorsPolicy);
 
+// Right after CORS: turn unhandled exceptions into a JSON 500 that KEEPS the CORS
+// header (so a server error reads as a 500 in the browser, not a phantom CORS
+// failure) and logs the stack trace.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 if (authEnabled)
     app.UseAuthentication();
 
