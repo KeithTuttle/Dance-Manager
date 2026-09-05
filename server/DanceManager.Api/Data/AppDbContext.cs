@@ -138,13 +138,20 @@ public class AppDbContext : DbContext
     }
 
     /// <summary>
-    /// Clears any client-supplied value on a store-generated (identity) primary key
-    /// before insert, so the database always assigns the id. Controllers bind whole
-    /// entities from request bodies, and the client sends a temporary negative id for
-    /// optimistic UI rows; without this, Postgres' <c>IDENTITY BY DEFAULT</c> honors
-    /// that value — inserting a negative PK, then failing later inserts with a
-    /// duplicate-key (23505) violation. Composite-key join rows (Enrollment,
-    /// RecitalParticipation) have no store-generated key and are left untouched.
+    /// Neutralizes any client-supplied value on a store-generated (identity) primary
+    /// key before insert, so the database always assigns the id. Controllers bind
+    /// whole entities from request bodies, and the client sends a temporary negative
+    /// id for optimistic UI rows; without this, Postgres' <c>IDENTITY BY DEFAULT</c>
+    /// honors that value — inserting a negative PK, then failing later inserts with a
+    /// duplicate-key (23505) violation.
+    ///
+    /// We only touch keys the CLIENT set (<see cref="Microsoft.EntityFrameworkCore.ChangeTracking.MemberEntry.IsTemporary"/>
+    /// is false) and mark them temporary — telling EF to generate the id — rather than
+    /// zeroing the value. Zeroing broke multi-row inserts (e.g. saving attendance for
+    /// several students at once): every new row got id 0 and EF's change tracker
+    /// rejected the second as a duplicate key. EF's own temporary keys are left alone.
+    /// Composite-key join rows (Enrollment, RecitalParticipation) have no store-
+    /// generated key and are untouched.
     /// </summary>
     private void ResetStoreGeneratedKeys()
     {
@@ -158,7 +165,9 @@ public class AppDbContext : DbContext
                 if (prop.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd
                     && (prop.ClrType == typeof(int) || prop.ClrType == typeof(long)))
                 {
-                    entry.Property(prop.Name).CurrentValue = Activator.CreateInstance(prop.ClrType);
+                    var member = entry.Property(prop.Name);
+                    if (!member.IsTemporary)
+                        member.IsTemporary = true;
                 }
             }
         }
