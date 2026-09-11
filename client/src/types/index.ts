@@ -58,6 +58,8 @@ export interface Student {
   firstName: string
   lastName: string
   dateOfBirth?: string | null
+  /** A typed-in age, used only when dateOfBirth is unknown. */
+  ageYears?: number | null
   parentName?: string | null
   parentEmail?: string | null
   parentPhone?: string | null

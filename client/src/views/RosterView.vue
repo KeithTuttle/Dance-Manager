@@ -411,6 +411,17 @@ async function saveStudentInfo() {
   }
 }
 
+// v-model.number leaves a cleared field as '' rather than null, which the
+// nullable int on the server would reject — so this field gets an explicit
+// handler like the others below it.
+async function setAgeYears(e: Event) {
+  const student = detailStudent.value
+  if (!student) return
+  const raw = (e.target as HTMLInputElement).value
+  student.ageYears = raw ? Number(raw) : null
+  await saveStudentInfo()
+}
+
 async function toggleInjuryAlert() {
   const student = detailStudent.value
   if (!student) return
@@ -807,6 +818,21 @@ watch(selectedClassId, async () => {
                   type="date"
                   class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   @change="saveStudentInfo"
+                />
+              </label>
+
+              <!-- Only useful without a DOB — a typed-in guess, not a birthday, so it
+                   won't advance on its own the way a DOB-derived age would. -->
+              <label v-if="!detailStudent.dateOfBirth" class="block space-y-1">
+                <span class="text-xs text-muted-foreground" title="Used only when the date of birth isn't known — won't update on its own.">Age (if DOB unknown)</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  placeholder="e.g. 8"
+                  class="w-24 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  :value="detailStudent.ageYears ?? ''"
+                  @change="setAgeYears"
                 />
               </label>
 
