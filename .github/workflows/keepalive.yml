@@ -1,8 +1,8 @@
 name: Supabase keep-alive
 
 # Supabase's free tier pauses a project after 7 days with no activity. This opens
-# a connection and WRITES a heartbeat row twice a week, which resets that timer,
-# so the database never idles out. Also runnable on demand from the Actions tab.
+# a connection and WRITES a heartbeat row once a day, which resets that timer, so
+# the database never idles out. Also runnable on demand from the Actions tab.
 #
 # GOTCHA (found 2026-09-17): the first version of this ran `select now();` — a
 # pure function call that touches no table. The workflow ran successfully every
@@ -21,13 +21,22 @@ name: Supabase keep-alive
 # week, which resets GitHub's 60-day clock so this workflow keeps itself, and
 # therefore Supabase, alive indefinitely. (talent-machine's copy of this file
 # got the same fix on 2026-11-10.)
+#
+# GOTCHA #3 (found 2026-11-24): despite the above, Supabase PAUSED this project
+# anyway. Root cause: twice-a-week was too sparse. Supabase's guidance is that a
+# project needs "a few requests a day" to reliably stay awake; two pings a week
+# sat right on the edge of the 7-day line. The final straw was GOTCHA #2 — the
+# workflow got auto-disabled, so the Mon 2026-11-23 ping never fired, stretching
+# the gap past the limit. talent-machine pings DAILY with this same method and
+# never paused. Lesson: frequency, not the write itself, was the weak point —
+# so this now runs daily too, matching talent-machine.
 
 on:
   schedule:
-    # Mondays & Thursdays at 07:23 UTC. Twice a week is well inside the 7-day
-    # window, so even a skipped/delayed run (GitHub can defer cron under load)
-    # is harmless. Odd minute avoids the top-of-hour rush when runs get delayed.
-    - cron: '23 7 * * 1,4'
+    # Every day at 07:23 UTC. Daily keeps us comfortably above Supabase's
+    # "a few requests a day" threshold, so a missed/deferred run (GitHub can
+    # defer cron under load) is harmless. Odd minute avoids the top-of-hour rush.
+    - cron: '23 7 * * *'
   workflow_dispatch: {}
 
 concurrency:
